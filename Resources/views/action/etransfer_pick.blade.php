@@ -9,9 +9,9 @@
      data-conversation-id="{{ $conversationId }}">
     <div class="form-group spatbridge-search">
         @if ($mode === 'order')
-            <label>{{ __('Order number') }}</label>
+            <label for="spatbridge-pick-order">{{ __('Order number') }}</label>
             <div class="input-group">
-                <input type="text" class="form-control spatbridge-pick-input" inputmode="numeric"
+                <input type="text" id="spatbridge-pick-order" class="form-control spatbridge-pick-input" inputmode="numeric"
                        data-param="order_id" autocomplete="off">
                 <span class="input-group-btn">
                     <button type="button" class="btn btn-default spatbridge-pick-find"
@@ -19,9 +19,9 @@
                 </span>
             </div>
         @else
-            <label>{{ __('Search e-Transfers') }}</label>
+            <label for="spatbridge-pick-search">{{ __('Search e-Transfers') }}</label>
             <div class="input-group">
-                <input type="text" class="form-control spatbridge-pick-input"
+                <input type="text" id="spatbridge-pick-search" class="form-control spatbridge-pick-input"
                        data-param="q" autocomplete="off" placeholder="{{ __('Name, reference or amount') }}">
                 <span class="input-group-btn">
                     <button type="button" class="btn btn-default spatbridge-pick-find"

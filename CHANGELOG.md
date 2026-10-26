@@ -111,3 +111,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The settings page's "Last event received" is shown in the viewing agent's
   time zone with its abbreviation (e.g. "2026-10-26 09:40:24 EDT") instead of
   unlabelled server time.
+- In the e-Transfer "Match to order" picker, an order that isn't on hold is
+  shown with a disabled "Use this order" button instead of being refused only
+  at the preview, and the order-number and search boxes have an accessible
+  name.

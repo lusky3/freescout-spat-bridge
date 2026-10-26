@@ -198,6 +198,11 @@
                     showError(message);
                 });
             });
+            if (mode === 'order' && !result.on_hold) {
+                // WordPress only accepts an on-hold order; say why instead of offering it.
+                use.disabled = true;
+                use.title = 'Not on hold, so it can\'t be matched';
+            }
             wrap.appendChild(use);
             wrap.appendChild(label);
             return wrap;
