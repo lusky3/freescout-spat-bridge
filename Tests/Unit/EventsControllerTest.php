@@ -252,6 +252,22 @@ class EventsControllerTest extends TestCase
         $this->assertTrue($this->logger->hasWarningThatContains('order.created'));
     }
 
+    public function test_unsigned_unknown_event_type_is_403_not_200(): void
+    {
+        $body = $this->body(['type' => 'order.created']);
+
+        $badSignature = $this->receive($this->request($body, null, str_repeat('0', 64)));
+        $this->assertSame(403, $badSignature->getStatusCode());
+
+        $request = $this->request($body);
+        $request->headers->remove('X-SPAT-Signature');
+        $request->server->remove('HTTP_X_SPAT_SIGNATURE');
+        $this->assertSame(403, $this->receive($request)->getStatusCode());
+
+        $this->assertSame([], $this->store->rows);
+        $this->assertSame([], $this->router->events);
+    }
+
     public function test_unknown_event_type_with_bad_fields_is_still_400(): void
     {
         $body = $this->body(['type' => 'order.created', 'id' => 'nope']);
