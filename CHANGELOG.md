@@ -16,3 +16,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Settings page (Connection, Modules, Sidebar) with a Test connection button.
 - Conversation sidebar with stacked and tabbed layouts, a per-agent layout
   switch and a "League info unavailable" state.
+- Read-only player card: one row per player with team, position, skill, next
+  game, and registration attention and history.

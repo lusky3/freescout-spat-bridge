@@ -5,6 +5,7 @@ namespace Modules\SpatBridge\Providers;
 use GuzzleHttp\Client;
 use Illuminate\Support\ServiceProvider;
 use Modules\SpatBridge\Features\FeatureRegistry;
+use Modules\SpatBridge\Features\PlayerCard\PlayerCardFeature;
 use Modules\SpatBridge\Services\ClientResult;
 use Modules\SpatBridge\Services\SidebarBuilder;
 use Modules\SpatBridge\Services\SpatClient;
@@ -45,6 +46,8 @@ class SpatBridgeServiceProvider extends ServiceProvider
         }, \Config::get('view.paths')), [__DIR__ . '/../Resources/views']), 'spatbridge');
 
         $this->loadRoutesFrom(__DIR__ . '/../Http/routes.php');
+
+        $this->app->make(FeatureRegistry::class)->register(new PlayerCardFeature());
 
         $this->registerSettingsSection();
         $this->registerSidebarPanel();
