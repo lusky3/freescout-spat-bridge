@@ -263,7 +263,8 @@ through `php artisan tinker`, and `wp` on the WordPress side, that:
 Every artisan and tinker call runs as the PHP-FPM user (`www-data`), and the
 last check asserts that FreeScout's cache holds nothing owned by root. The
 script prints one `PASS` or `FAIL` line per check and exits non-zero on any
-failure. The action checks change WordPress data, so each run recreates the
+failure. The FreeScout logins are random per run; set `E2E_ADMIN_PASSWORD` or
+`E2E_NOCAP_PASSWORD` to choose one. The action checks change WordPress data, so each run recreates the
 WordPress container. The sandbox turns WP-Cron off, so the script runs
 `wp cron event run --due-now` itself whenever events should go out. It
 repeats a pass until WP-CLI reports success, because WooCommerce's

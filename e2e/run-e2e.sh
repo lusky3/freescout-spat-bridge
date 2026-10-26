@@ -41,11 +41,11 @@ COMPOSE="docker compose -p spatbridge-e2e -f docker-compose.yml"
 FREESCOUT_URL="http://localhost:8095"
 SPORTSPRESS_URL="http://localhost:8094"
 ADMIN_EMAIL="admin@example.test"
-ADMIN_PASSWORD="AdminPass123!"
+ADMIN_PASSWORD="${E2E_ADMIN_PASSWORD:-$(openssl rand -hex 12)}"
 # A non-admin agent. WordPress has a subscriber with the same email, so the
 # agent reaches WordPress as a known user who lacks the capability.
 NOCAP_EMAIL="nocap@example.test"
-NOCAP_PASSWORD="NoCapPass123!"
+NOCAP_PASSWORD="${E2E_NOCAP_PASSWORD:-$(openssl rand -hex 12)}"
 # The event receiver as WordPress reaches it on the compose network.
 EVENTS_URL="http://freescout-web/spatbridge/events"
 # The fixture customer's address as WordPress stores it.

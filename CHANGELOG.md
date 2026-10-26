@@ -60,6 +60,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `php artisan migrate`, which production mode cancels over `docker exec`.
 - README: the end-to-end section lists the waitlist, Player card action and
   WordPress event checks.
+- E2E: the FreeScout logins are generated per run instead of hardcoded, and
+  can be set with `E2E_ADMIN_PASSWORD` and `E2E_NOCAP_PASSWORD`.
 - README: the end-to-end section names the sandbox workarounds the script
   still needs (repeated cron passes, waiting for the sandbox setup to exit).
 - README: after `docker restart`, wait for FreeScout to finish booting before
