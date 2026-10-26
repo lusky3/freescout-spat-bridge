@@ -7,6 +7,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Modules\SpatBridge\Features\Feature;
 use Modules\SpatBridge\Features\FeatureRegistry;
+use Modules\SpatBridge\Features\GuardsActionParams;
 use Modules\SpatBridge\Features\Panel;
 use Modules\SpatBridge\Http\Controllers\ActionController;
 use Modules\SpatBridge\Services\ClientResult;
@@ -112,10 +113,10 @@ class ActionControllerTest extends TestCase
     /**
      * @return ActionController&object{conversations: array, rendered: array}
      */
-    private function controller(?array $override = null)
+    private function controller(?array $override = null, ?Feature $feature = null)
     {
         $registry = new FeatureRegistry();
-        $registry->register($this->feature($override));
+        $registry->register($feature ?: $this->feature($override));
 
         $controller = new class (
             $this->client,
@@ -264,6 +265,135 @@ class ActionControllerTest extends TestCase
     private function cacheKey(): string
     {
         return 'spatbridge.customer.' . md5(strtolower(self::CUSTOMER_EMAIL));
+    }
+
+    // ---- param guard -----------------------------------------------------
+
+    /**
+     * Refuses the "match" action unless params.who is one of the customer's addresses.
+     */
+    private function guardedFeature(): Feature
+    {
+        $inner = $this->feature();
+
+        return new class ($inner) implements Feature, GuardsActionParams {
+            /** @var Feature */
+            private $inner;
+            /** @var array */
+            public $seen = [];
+
+            public function __construct(Feature $inner)
+            {
+                $this->inner = $inner;
+            }
+
+            public function guardParams(string $action, array $params, array $customerEmails): ?string
+            {
+                $this->seen[] = [$action, $customerEmails];
+                $who = strtolower((string) ($params['who'] ?? ''));
+
+                return $action === 'match' && !in_array($who, array_map('strtolower', $customerEmails), true)
+                    ? 'Not this customer.'
+                    : null;
+            }
+
+            public function key(): string
+            {
+                return $this->inner->key();
+            }
+
+            public function label(): string
+            {
+                return $this->inner->label();
+            }
+
+            public function providerKeys(): array
+            {
+                return $this->inner->providerKeys();
+            }
+
+            public function present(array $sections): ?Panel
+            {
+                return null;
+            }
+
+            public function actionKeys(): array
+            {
+                return $this->inner->actionKeys();
+            }
+
+            public function queryKeys(): array
+            {
+                return $this->inner->queryKeys();
+            }
+
+            public function previewOverride(string $action, array $params): ?array
+            {
+                return null;
+            }
+
+            public function mapConfirmCodes(string $action, array $codes, array $params): array
+            {
+                return $params;
+            }
+        };
+    }
+
+    public function test_preview_refuses_params_the_feature_guard_rejects_without_calling_wordpress(): void
+    {
+        $controller = $this->controller(null, $this->guardedFeature());
+
+        $controller->preview($this->previewRequest($this->user(), ['params' => '{"who":"victim@example.com"}']));
+        $controller->preview($this->previewRequest($this->user(), ['params' => '{}']));
+
+        $this->assertSame([], $this->client->calls);
+        $this->assertSame('spatbridge::action.error', $controller->rendered[0][0]);
+        $this->assertSame('Not this customer.', $controller->rendered[0][1]['message']);
+        $this->assertSame('spatbridge::action.error', $controller->rendered[1][0]);
+    }
+
+    public function test_run_refuses_params_the_feature_guard_rejects_without_calling_wordpress(): void
+    {
+        $controller = $this->controller(null, $this->guardedFeature());
+
+        $response = $controller->run($this->runRequest($this->user(), ['params' => '{"who":"victim@example.com"}']));
+
+        $this->assertSame(403, $response->getStatusCode());
+        $this->assertSame('Not this customer.', $this->json($response)['msg']);
+        $this->assertSame([], $this->client->calls);
+        $this->assertSame([], Thread::$created);
+    }
+
+    public function test_the_guard_accepts_the_customers_own_address_in_any_case_on_preview_and_run(): void
+    {
+        $this->client->results = [$this->dryRun(), $this->realRun()];
+        $controller = $this->controller(null, $this->guardedFeature());
+        $params = '{"who":"jordan.SMITH@example.com"}';
+
+        $controller->preview($this->previewRequest($this->user(), ['params' => $params]));
+        $this->assertSame('spatbridge::action.preview', $controller->rendered[0][0]);
+        $key = $this->client->calls[0][1]['key'];
+
+        $request = $this->runRequest($this->user(), ['params' => $params, 'idempotency_key' => $key]);
+        $response = $controller->run($request);
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('success', $this->json($response)['status']);
+        $this->assertCount(2, $this->client->calls);
+    }
+
+    public function test_the_guard_gets_the_conversations_customer_addresses_and_not_queries(): void
+    {
+        $feature = $this->guardedFeature();
+        $controller = $this->controller(null, $feature);
+        $this->client->results[] = ClientResult::success(200, ['results' => []], 1);
+
+        $controller->query($this->request('GET', [
+            'feature' => 'etransfers', 'query' => 'search', 'params' => '{}', 'conversation_id' => '77',
+        ], $this->user()));
+        $this->assertSame([], $feature->seen);
+
+        $controller->preview($this->previewRequest($this->user(), ['params' => '{"who":"x"}']));
+        $this->assertSame([['match', [self::CUSTOMER_EMAIL]]], $feature->seen);
     }
 
     // ---- preview ---------------------------------------------------------

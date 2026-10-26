@@ -3,6 +3,7 @@
 namespace Modules\SpatBridge\Features\PlayerCard;
 
 use Modules\SpatBridge\Features\Feature;
+use Modules\SpatBridge\Features\GuardsActionParams;
 use Modules\SpatBridge\Features\Panel;
 use Modules\SpatBridge\Features\PanelRow;
 use Modules\SpatBridge\Features\RowAction;
@@ -15,7 +16,7 @@ use Modules\SpatBridge\Features\RowAction;
  * Wire data comes from another system, so every key may be missing and every
  * value may have the wrong type; nothing here throws on that.
  */
-final class PlayerCardFeature implements Feature
+final class PlayerCardFeature implements Feature, GuardsActionParams
 {
     private const SEP = ' · ';
     private const EMAIL_FORM_VIEW = 'spatbridge::action.change_email_form';
@@ -99,6 +100,23 @@ final class PlayerCardFeature implements Feature
     public function queryKeys(): array
     {
         return [];
+    }
+
+    public function guardParams(string $action, array $params, array $customerEmails): ?string
+    {
+        if ($action !== 'change_email') {
+            return null;
+        }
+
+        // The old address is browser input; only this ticket's customer may be changed.
+        $old = strtolower($this->str($params, 'old_email'));
+        foreach ($customerEmails as $email) {
+            if ($old !== '' && is_string($email) && strtolower(trim($email)) === $old) {
+                return null;
+            }
+        }
+
+        return __("That email address isn't this ticket's customer's.");
     }
 
     public function previewOverride(string $action, array $params): ?array

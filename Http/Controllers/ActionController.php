@@ -7,6 +7,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Modules\SpatBridge\Features\Feature;
 use Modules\SpatBridge\Features\FeatureRegistry;
+use Modules\SpatBridge\Features\GuardsActionParams;
 use Modules\SpatBridge\Services\ActionPermissions;
 use Modules\SpatBridge\Services\ClientResult;
 use Modules\SpatBridge\Services\ConnectionMessage;
@@ -219,6 +220,13 @@ class ActionController extends Controller
             return ['error' => [400, __("The action's details couldn't be read.")]];
         }
 
+        if ($isAction && $feature instanceof GuardsActionParams) {
+            $refusal = $feature->guardParams($name, $params, $this->customerEmails($conversation));
+            if ($refusal !== null) {
+                return ['error' => [403, $refusal]];
+            }
+        }
+
         return [
             'conversation' => $conversation,
             'user' => $user,
@@ -339,6 +347,19 @@ class ActionController extends Controller
      */
     private function forgetCustomerCache($conversation): void
     {
+        foreach ($this->customerEmails($conversation) as $email) {
+            \Cache::forget('spatbridge.customer.' . md5(strtolower($email)));
+        }
+    }
+
+    /**
+     * The addresses the sidebar looks the customer up by.
+     *
+     * @param object $conversation
+     * @return string[]
+     */
+    private function customerEmails($conversation): array
+    {
         $emails = [];
         $customer = $conversation->customer ?? null;
         if (is_object($customer) && method_exists($customer, 'getMainEmail')) {
@@ -346,9 +367,7 @@ class ActionController extends Controller
         }
         $emails[] = trim((string) ($conversation->customer_email ?? ''));
 
-        foreach (array_unique(array_filter($emails, 'strlen')) as $email) {
-            \Cache::forget('spatbridge.customer.' . md5(strtolower($email)));
-        }
+        return array_values(array_unique(array_filter($emails, 'strlen')));
     }
 
     private function paramsJson(array $params): string

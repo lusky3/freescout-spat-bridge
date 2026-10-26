@@ -307,4 +307,23 @@ class PlayerCardFeatureTest extends TestCase
     {
         $this->assertSame(['a' => 1], (new PlayerCardFeature())->mapConfirmCodes('change_email', ['code'], ['a' => 1]));
     }
+
+    public function test_change_email_is_only_allowed_for_the_ticket_customers_own_address(): void
+    {
+        $feature = new PlayerCardFeature();
+        $mine = ['Jordan@Example.com', 'other@example.com'];
+
+        $this->assertNull($feature->guardParams('change_email', ['old_email' => 'jordan@example.COM'], $mine));
+        $this->assertNull($feature->guardParams('change_email', ['old_email' => ' other@example.com '], $mine));
+
+        foreach ([['old_email' => 'victim@example.com'], ['old_email' => ''], [], ['old_email' => ['x']]] as $params) {
+            $this->assertNotNull($feature->guardParams('change_email', $params + ['new_email' => 'a@b.co'], $mine));
+        }
+        $this->assertNotNull($feature->guardParams('change_email', ['old_email' => 'jordan@example.com'], []));
+    }
+
+    public function test_the_guard_leaves_other_actions_alone(): void
+    {
+        $this->assertNull((new PlayerCardFeature())->guardParams('rerun', ['order_id' => 5107], []));
+    }
 }
