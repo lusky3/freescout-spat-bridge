@@ -1,0 +1,19 @@
+# Normalise line endings in the repo.
+* text=auto eol=lf
+
+# The release archive is built with `git archive`, which ships every tracked
+# file. These are the development harness: useful in the repo, pure noise
+# inside a customer's Modules/SpatBridge/ directory.
+#
+# export-ignore is the single definition of "not shipped". Anything the
+# module needs at runtime must NOT be listed here.
+/.github       export-ignore
+/Tests         export-ignore
+/docker        export-ignore
+/e2e           export-ignore
+/scripts       export-ignore
+/.gitattributes export-ignore
+/.gitignore    export-ignore
+/phpunit.xml   export-ignore
+/phpcs.xml     export-ignore
+/composer.lock export-ignore

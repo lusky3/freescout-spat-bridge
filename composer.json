@@ -1,0 +1,40 @@
+{
+    "name": "freescout-spat-bridge/spat-bridge",
+    "description": "Shows league info from SportsPress Admin Tools (player, e-Transfers, waitlist) in the FreeScout conversation sidebar.",
+    "type": "library",
+    "license": "MIT",
+    "require": {
+        "php": "^7.4|^8.0",
+        "guzzlehttp/guzzle": "^7.0 || ^8.0",
+        "psr/log": "^1.0 || ^2.0 || ^3.0"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^9.6",
+        "squizlabs/php_codesniffer": "^4.0",
+        "illuminate/validation": "5.5.*",
+        "illuminate/translation": "5.5.*",
+        "illuminate/http": "5.5.*"
+    },
+    "autoload": {
+        "psr-4": {
+            "Modules\\SpatBridge\\": ""
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\": "Tests/",
+            "App\\": "Tests/Support/AppStubs/"
+        }
+    },
+    "config": {
+        "platform": {
+            "php": "7.4.33"
+        },
+        "audit": {
+            "block-insecure": false
+        },
+        "allow-plugins": {
+            "kylekatarnls/update-helper": false
+        }
+    }
+}

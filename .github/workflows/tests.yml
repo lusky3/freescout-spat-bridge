@@ -1,0 +1,169 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit-tests:
+    name: Unit tests (PHP ${{ matrix.php-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        # 7.4 is composer.json's declared floor. 8.2 is FreeScout's own
+        # recommended/target PHP version (its installation guide explicitly
+        # warns against 8.1 and recommends 8.2+).
+        php-version: ['7.4', '8.2']
+
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up PHP ${{ matrix.php-version }}
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: ${{ matrix.php-version }}
+          extensions: zip
+          coverage: none
+          tools: composer:v2
+
+      - name: Get Composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Composer packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-php${{ matrix.php-version }}-composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-php${{ matrix.php-version }}-composer-
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist
+
+      # The module ships as plain files copied/cloned into a FreeScout
+      # install, so "is this valid on the PHP the customer actually runs" is
+      # a real question the unit suite alone does not answer.
+      - name: Lint PHP syntax (php -l)
+        run: |
+          set -e
+          git ls-files -- '*.php' | while read -r file; do
+            php -l "$file"
+          done
+
+      - name: Run unit tests
+        run: vendor/bin/phpunit --testsuite Unit
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    # Read as guards below. A pull request from a fork gets no secrets, so
+    # each publish step skips itself rather than failing the run.
+    env:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+      CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
+      QLTY_COVERAGE_TOKEN: ${{ secrets.QLTY_COVERAGE_TOKEN }}
+
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: '8.2'
+          extensions: zip
+          coverage: pcov
+          tools: composer:v2
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Run tests with coverage
+        run: vendor/bin/phpunit --testsuite Unit --coverage-clover coverage.xml --coverage-text
+
+      # Enforced in-repo rather than delegated to a service, so the gate
+      # holds on forks and whenever an external dashboard is unavailable.
+      # Codecov/Codacy/Qlty below are for trend/PR annotations, not the gate.
+      #
+      # 90% is a floor, not a target. The FreeScout-framework-wiring parts of
+      # Providers/SpatBridgeServiceProvider.php are marked @codeCoverageIgnore
+      # rather than counted as untested debt: they are integration-tested
+      # against a real FreeScout instance by the e2e environment instead,
+      # since faking Eventy/View/Config well enough to unit-test them
+      # meaningfully isn't worth building.
+      - name: Enforce minimum line coverage
+        run: |
+          php -r '
+            $file = "coverage.xml";
+            if (!is_file($file)) {
+              fwrite(STDERR, "::error::coverage.xml was not produced\n");
+              exit(1);
+            }
+            $metrics = simplexml_load_file($file)->project->metrics;
+            $covered = (int) $metrics["coveredstatements"];
+            $total = (int) $metrics["statements"];
+            $percent = $total > 0 ? ($covered / $total) * 100 : 0.0;
+            $minimum = 90.0;
+            printf("Line coverage: %.2f%% (%d/%d statements)\n", $percent, $covered, $total);
+            if ($percent < $minimum) {
+              fwrite(STDERR, sprintf("::error::coverage %.2f%% is below the %.1f%% minimum\n", $percent, $minimum));
+              exit(1);
+            }
+          '
+
+      # The three publish steps below are reporting, not gating: the hard
+      # gate is the in-repo threshold above, which needs no network and no
+      # account. An unreachable dashboard should never be the reason a
+      # correct change cannot merge, hence continue-on-error on all of them.
+      - name: Upload coverage to Codecov
+        if: env.CODECOV_TOKEN != ''
+        continue-on-error: true
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        with:
+          files: coverage.xml
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload coverage to Codacy
+        if: env.CODACY_PROJECT_TOKEN != ''
+        continue-on-error: true
+        uses: codacy/codacy-coverage-reporter-action@89d6c85cfafaec52c72b6c5e8b2878d33104c699 # v1.3.0
+        with:
+          project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
+          coverage-reports: coverage.xml
+
+      - name: Upload coverage to Qlty
+        if: env.QLTY_COVERAGE_TOKEN != ''
+        continue-on-error: true
+        uses: qltysh/qlty-action/coverage@08a0a862c159eae9b9003081da6663d96efef637 # v2
+        with:
+          token: ${{ secrets.QLTY_COVERAGE_TOKEN }}
+          files: coverage.xml
