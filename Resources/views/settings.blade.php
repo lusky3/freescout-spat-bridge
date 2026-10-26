@@ -1,0 +1,1 @@
+@include('spatbridge::settings.index')

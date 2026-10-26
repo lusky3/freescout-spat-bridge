@@ -2,6 +2,7 @@
 
 namespace Modules\SpatBridge\Features;
 
+use Modules\SpatBridge\Services\Support\OptionBool;
 use Modules\SpatBridge\Services\Support\OptionStoreInterface;
 
 final class FeatureRegistry
@@ -24,7 +25,8 @@ final class FeatureRegistry
 
     /**
      * Features that are switched on, ordered by `spatbridge.feature_order`.
-     * Only an explicit `false` switches a feature off. Features missing from
+     * A stored false (read back as "" or "0") switches a feature off; a
+     * missing option means on. Features missing from
      * the order keep their registration order and come last.
      *
      * @return Feature[]
@@ -34,7 +36,7 @@ final class FeatureRegistry
         $enabled = [];
         foreach ($this->features as $feature) {
             $switch = $options->get('spatbridge.features.' . $feature->key() . '.enabled', true);
-            if ($switch !== false) {
+            if (OptionBool::from($switch, true)) {
                 $enabled[] = $feature;
             }
         }

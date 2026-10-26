@@ -8,5 +8,11 @@ Route::group([
     'prefix' => \Helper::getSubdirectory(),
     'namespace' => 'Modules\\SpatBridge\\Http\\Controllers',
 ], function () {
-    // No routes yet.
+    Route::post('/app-settings/spatbridge/save', [
+        'uses' => 'SpatBridgeSettingsController@save',
+    ])->name('spatbridge_save_settings');
+
+    Route::post('/app-settings/spatbridge/test', [
+        'uses' => 'SpatBridgeSettingsController@test',
+    ])->name('spatbridge_test_connection');
 });

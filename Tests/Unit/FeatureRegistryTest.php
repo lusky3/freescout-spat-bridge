@@ -88,7 +88,22 @@ class FeatureRegistryTest extends TestCase
         $this->assertSame(['B', 'A'], $this->keys($registry->all()));
     }
 
-    public function test_only_explicit_false_disables_and_non_array_order_is_empty(): void
+    public function test_stored_false_reads_back_as_empty_or_zero_and_disables_a_feature(): void
+    {
+        $registry = new FeatureRegistry();
+        $registry->register($this->feature('A'));
+        $registry->register($this->feature('B'));
+        $registry->register($this->feature('C'));
+
+        $options = new FakeOptionStore();
+        $options->set('spatbridge.features.A.enabled', '');
+        $options->set('spatbridge.features.B.enabled', '0');
+        // C has no stored option at all.
+
+        $this->assertSame(['C'], $this->keys($registry->enabled($options)));
+    }
+
+    public function test_unrecognised_switch_value_keeps_default_on_and_non_array_order_is_empty(): void
     {
         $registry = new FeatureRegistry();
         $registry->register($this->feature('A'));
@@ -96,7 +111,7 @@ class FeatureRegistryTest extends TestCase
 
         $options = new FakeOptionStore();
         $options->set('spatbridge.features.A.enabled', true);
-        $options->set('spatbridge.features.B.enabled', 'no');
+        $options->set('spatbridge.features.B.enabled', 'maybe');
         $options->set('spatbridge.feature_order', 'B,A');
 
         $this->assertSame(['A', 'B'], $this->keys($registry->enabled($options)));
