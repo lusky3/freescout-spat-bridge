@@ -15,13 +15,16 @@ class ConnectionMessageTest extends TestCase
     {
         return [
             ['not_configured', 'Enter the WordPress site URL and shared secret, then save.'],
-            ['wp_not_configured', 'WordPress has no FreeScout secret set. Add it under SportsPress Admin Tools → FreeScout.'],
+            ['wp_not_configured', 'WordPress has no FreeScout secret set. '
+                . 'Add it under SportsPress Admin Tools → FreeScout.'],
             ['bad_signature', 'WordPress rejected the signature. Check that both sides use the same secret.'],
-            ['clock_skew', "WordPress says the request's timestamp is too far off. Check this server's clock; it must be within 5 minutes of WordPress."],
+            ['clock_skew', "WordPress says the request's timestamp is too far off. "
+                . "Check this server's clock; it must be within 5 minutes of WordPress."],
             ['rate_limited', 'WordPress is rate-limiting requests. Try again in a minute.'],
             ['network', "Couldn't reach WordPress. Check the site URL."],
             ['timeout', "WordPress didn't answer within 3 seconds."],
-            ['bad_response', 'WordPress answered, but not with the expected data. Is SportsPress Admin Tools up to date?'],
+            ['bad_response', 'WordPress answered, but not with the expected data. '
+                . 'Is SportsPress Admin Tools up to date?'],
         ];
     }
 

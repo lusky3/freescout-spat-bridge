@@ -41,7 +41,9 @@ class SpatClientTest extends TestCase
 
     private function errorResponse(int $status, string $code): Response
     {
-        return new Response($status, [], json_encode(['code' => $code, 'message' => 'x', 'data' => ['status' => $status]]));
+        $body = ['code' => $code, 'message' => 'x', 'data' => ['status' => $status]];
+
+        return new Response($status, [], json_encode($body));
     }
 
     public function test_customer_sends_signed_json_to_the_customer_route(): void
@@ -103,12 +105,18 @@ class SpatClientTest extends TestCase
     public function wpErrorProvider(): array
     {
         return [
-            'invalid signature' => [$this->errorResponse(403, 'spat_freescout_invalid_signature'), 403, 'bad_signature'],
-            'missing timestamp' => [$this->errorResponse(403, 'spat_freescout_missing_timestamp'), 403, 'bad_signature'],
+            'invalid signature' => [
+                $this->errorResponse(403, 'spat_freescout_invalid_signature'), 403, 'bad_signature',
+            ],
+            'missing timestamp' => [
+                $this->errorResponse(403, 'spat_freescout_missing_timestamp'), 403, 'bad_signature',
+            ],
             'request expired' => [$this->errorResponse(403, 'spat_freescout_request_expired'), 403, 'clock_skew'],
             'non-spat 403 html' => [new Response(403, [], '<html>Forbidden by WAF</html>'), 403, 'http_error'],
             'non-spat 403 json' => [$this->errorResponse(403, 'rest_forbidden'), 403, 'http_error'],
-            'not configured on wp' => [$this->errorResponse(503, 'spat_freescout_not_configured'), 503, 'wp_not_configured'],
+            'not configured on wp' => [
+                $this->errorResponse(503, 'spat_freescout_not_configured'), 503, 'wp_not_configured',
+            ],
             'rate limited' => [$this->errorResponse(429, 'spat_freescout_rate_limited'), 429, 'rate_limited'],
             'server error' => [new Response(500, [], 'boom'), 500, 'http_error'],
         ];
@@ -138,7 +146,10 @@ class SpatClientTest extends TestCase
     public function test_timeout_connect_exception_is_timeout(): void
     {
         $result = $this->client([
-            new ConnectException('cURL error 28: Operation timed out after 3000 milliseconds', new Request('POST', self::BASE)),
+            new ConnectException(
+                'cURL error 28: Operation timed out after 3000 milliseconds',
+                new Request('POST', self::BASE)
+            ),
         ])->customer('a@example.com');
 
         $this->assertSame('timeout', $result->errorCode());

@@ -11,7 +11,10 @@ final class ConnectionMessage
     {
         if ($result->ok()) {
             $data = $result->data() ?: [];
-            $version = isset($data['spat_version']) && is_scalar($data['spat_version']) ? (string) $data['spat_version'] : '?';
+            $version = '?';
+            if (isset($data['spat_version']) && is_scalar($data['spat_version'])) {
+                $version = (string) $data['spat_version'];
+            }
 
             return 'Connected. SPAT ' . $version . ', ' . $result->latencyMs() . ' ms.';
         }
@@ -24,7 +27,8 @@ final class ConnectionMessage
             case 'bad_signature':
                 return 'WordPress rejected the signature. Check that both sides use the same secret.';
             case 'clock_skew':
-                return "WordPress says the request's timestamp is too far off. Check this server's clock; it must be within 5 minutes of WordPress.";
+                return "WordPress says the request's timestamp is too far off. "
+                    . "Check this server's clock; it must be within 5 minutes of WordPress.";
             case 'rate_limited':
                 return 'WordPress is rate-limiting requests. Try again in a minute.';
             case 'network':

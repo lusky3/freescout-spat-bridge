@@ -290,7 +290,10 @@ class SpatBridgeSettingsControllerTest extends TestCase
         $json = $this->controller($this->store())->test($client)->getData(true);
 
         $this->assertFalse($json['ok']);
-        $this->assertSame('WordPress rejected the signature. Check that both sides use the same secret.', $json['message']);
+        $this->assertSame(
+            'WordPress rejected the signature. Check that both sides use the same secret.',
+            $json['message']
+        );
         $this->assertNull($json['spat_version']);
         $this->assertSame([], $json['providers']);
     }
