@@ -36,10 +36,18 @@ plugins.
 
 ## Install
 
-These steps were verified on the `nfrastack/freescout` Docker image, where
-`Modules` points to `/data/Modules` and the web server runs as
-`nginx:www-data`. The examples assume a container named `freescout`. On another
-install, use its `Modules/` directory and its web server user.
+The examples are for the `nfrastack/freescout` Docker image, where `Modules`
+points to `/data/Modules` and the web server runs as `nginx:www-data`, in a
+container named `freescout`. On another install, use its `Modules/` directory
+and its web server user.
+
+What has been checked: steps 1 to 7 were run on a local
+`nfrastack/freescout:2.2.21` stack (FreeScout 1.8.248, PHP 8.5) with a
+`git archive` of an early version of the module (player card only), extracted
+into `/data/Modules`. The release zip is the same archive. The upgrade steps
+and the events table's migration haven't been run on that image; the
+end-to-end tests run the same `freescout:module-install` command, migration
+included, on a plain FreeScout container.
 
 Run every `php artisan` command as the web server user, never as root. Files
 that root creates in FreeScout's cache are unwritable for the web server, and
@@ -79,9 +87,11 @@ the sidebar then shows nothing.
    ```
 
    `module:enable` takes the module's name in quotes. The folder name and the
-   alias don't work there. `freescout:module-install` links the module's
-   scripts into `public/modules/spatbridge` and clears the cache. Together the
-   two commands do what **Manage → Modules → ARL League → Activate** does.
+   alias don't work there. `freescout:module-install` runs the module's
+   database migration (with `--force`, so it isn't cancelled in production),
+   links the module's scripts into `public/modules/spatbridge` and clears the
+   cache. Together the two commands do what **Manage → Modules → ARL League →
+   Activate** does.
 
 6. Generate the shared secret:
 
@@ -115,14 +125,51 @@ Recent events, and what the module did with each, are listed at
 `/app-settings/spatbridge/events` (admins only), linked from **Last event
 received**.
 
-Existing installs: events are stored in a new `spatbridge_events` table. Run
-`php artisan migrate` as the web server user, or the module install command
-from step 5, to create it.
+Events are stored in a `spatbridge_events` table. On an install from before
+events existed, the upgrade below creates it. Don't use plain
+`php artisan migrate` for this: FreeScout runs in production mode, and over
+`docker exec` without a terminal Laravel answers its own confirmation with no
+and prints "Command Cancelled!". The table is then missing and every event
+fails.
 
 To check the install, `php artisan module:list` shows ARL League as Enabled,
 and `https://<helpdesk>/modules/spatbridge/js/sidebar.js` returns 200. The
 module survives restarts and redeploys as long as the `/data` and `/www/html`
 volumes persist.
+
+### Upgrading
+
+Once the repository is public, **Manage → Modules → ARL League → Update Now**
+does all of this. To upgrade by hand, with the new release's
+`freescout-spat-bridge.zip` extracted to `SpatBridge` as in Install steps 1
+and 2:
+
+1. Remove the old module folder. Copying over it would merge the two versions
+   and keep files the new one dropped. Run steps 1 and 2 together: in between,
+   the module's files are missing.
+
+   ```sh
+   docker exec freescout rm -rf /data/Modules/SpatBridge
+   ```
+
+2. Copy the new folder in and give it to the web server user:
+
+   ```sh
+   docker cp SpatBridge freescout:/data/Modules/
+   docker exec freescout chown -R nginx:www-data /data/Modules/SpatBridge
+   ```
+
+3. Install it as the web server user. This runs any new migrations (with
+   `--force`), relinks the scripts and clears the cache:
+
+   ```sh
+   docker exec -u nginx -w /www/html freescout php artisan freescout:module-install spatbridge
+   ```
+
+   The module stays enabled; `module:enable` isn't needed again.
+
+4. Restart the container, as in Install step 4, so PHP drops the old code:
+   `docker restart freescout`.
 
 ### Migrating from SplmWaitlist
 
@@ -158,7 +205,8 @@ waitlist panels, and the ARL League settings page shows a warning.
 ### Development install (git clone)
 
 For development, clone the repository instead of extracting a release, then
-continue from step 3:
+continue from Install step 3 (ownership). Install step 5 is still needed: a
+clone also has to be enabled and installed with `freescout:module-install`.
 
 ```sh
 git clone https://github.com/lusky3/freescout-spat-bridge.git Modules/SpatBridge

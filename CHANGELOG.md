@@ -50,9 +50,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- README: the install steps are the verified production runbook (release
-  archive into `/data/Modules/SpatBridge`, ownership fix, enable and install
-  as the web server user). Cloning is kept as a development install.
+- README: the install steps are the production runbook (release archive into
+  `/data/Modules/SpatBridge`, ownership fix, enable and install as the web
+  server user), with what was actually checked and where. Cloning is kept as
+  a development install.
+- README: a manual upgrade section (remove the old folder, copy, ownership,
+  `freescout:module-install` as the web server user, restart). The events
+  table is created by `freescout:module-install`, not plain
+  `php artisan migrate`, which production mode cancels over `docker exec`.
 - README: the end-to-end section lists the waitlist, Player card action and
   WordPress event checks.
 - README: the end-to-end section names the sandbox workarounds the script
