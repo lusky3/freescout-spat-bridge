@@ -171,7 +171,10 @@ class SpatBridgeServiceProvider extends ServiceProvider
         // Same filter and path convention FreeScout's layout and its modules
         // use: \Module::getPublicPath(alias) is the module's public symlink.
         \Eventy::addFilter('javascripts', function ($javascripts) {
+            // No ?v= suffix: Minify resolves these as files on disk, and its
+            // build name already changes with each file's mtime.
             $javascripts[] = \Module::getPublicPath('spatbridge') . '/js/sidebar.js';
+            $javascripts[] = \Module::getPublicPath('spatbridge') . '/js/actions.js';
 
             return $javascripts;
         });

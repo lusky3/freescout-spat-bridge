@@ -50,4 +50,26 @@ final class ConnectionMessage
                 return "Couldn't reach WordPress.";
         }
     }
+
+    /**
+     * Plain-words error for the action pop-up. WordPress's own message is
+     * shown as is where it is meant for the agent.
+     */
+    public static function actionMessage(ClientResult $result): string
+    {
+        switch ($result->errorCode()) {
+            case 'actor_unknown':
+                return $result->detail() !== '' ? $result->detail() : 'No WordPress account for your email address.';
+            case 'actor_forbidden':
+                return "Your WordPress account isn't allowed to do this.";
+            case 'unknown_action':
+                return "WordPress doesn't support this action. Update SportsPress Admin Tools.";
+            case 'action_error':
+                return $result->detail() !== '' ? $result->detail() : self::describe($result);
+            case 'timeout':
+                return "WordPress didn't answer within 15 seconds.";
+            default:
+                return self::describe($result);
+        }
+    }
 }

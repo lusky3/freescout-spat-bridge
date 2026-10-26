@@ -54,6 +54,14 @@ class FakeCache
         self::$store[$key] = $value;
     }
 
+    public static function forget(string $key): bool
+    {
+        $existed = array_key_exists($key, self::$store);
+        unset(self::$store[$key]);
+
+        return $existed;
+    }
+
     public static function reset(): void
     {
         self::$store = [];

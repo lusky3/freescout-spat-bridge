@@ -86,6 +86,21 @@ final class PlayerCardFeature implements Feature
         );
     }
 
+    public function actionKeys(): array
+    {
+        return [];
+    }
+
+    public function previewOverride(string $action, array $params): ?array
+    {
+        return null;
+    }
+
+    public function mapConfirmCodes(string $action, array $codes, array $params): array
+    {
+        return $params;
+    }
+
     private function playerRow(array $player, ?array $current, string $season): PanelRow
     {
         $title = $this->playerTitle($player);

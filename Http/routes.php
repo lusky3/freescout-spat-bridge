@@ -26,4 +26,12 @@ Route::group([
     Route::get('/spatbridge/action/preview', [
         'uses' => 'ActionController@preview',
     ])->name('spatbridge.action.preview');
+
+    Route::post('/spatbridge/action/run', [
+        'uses' => 'ActionController@run',
+    ])->name('spatbridge.action.run');
+
+    Route::get('/spatbridge/action/query', [
+        'uses' => 'ActionController@query',
+    ])->name('spatbridge.action.query');
 });

@@ -37,6 +37,13 @@ class RowActionTest extends TestCase
         $this->assertSame('{}', $parsed['params']);
     }
 
+    public function test_query_substitutes_invalid_utf8_instead_of_dropping_the_params(): void
+    {
+        parse_str((new RowAction('f', 'a', 'L', ['name' => "Pat \xB1 Smith", 'id' => 3]))->query(), $parsed);
+
+        $this->assertSame(['name' => "Pat \u{FFFD} Smith", 'id' => 3], json_decode($parsed['params'], true));
+    }
+
     public function test_panel_row_defaults_to_no_actions(): void
     {
         $this->assertSame([], (new PanelRow('Title'))->actions());

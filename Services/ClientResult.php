@@ -68,7 +68,8 @@ final class ClientResult
 
     /**
      * '' when ok; otherwise one of not_configured, network, timeout, bad_signature, clock_skew,
-     * wp_not_configured, rate_limited, spat_outdated, redirected, http_error, bad_response.
+     * wp_not_configured, rate_limited, spat_outdated, redirected, http_error, bad_response; and for
+     * actions and queries also actor_unknown, actor_forbidden, unknown_action, action_error.
      */
     public function errorCode(): string
     {
@@ -80,7 +81,10 @@ final class ClientResult
         return $this->latencyMs;
     }
 
-    /** Extra context for the error code; '' when there is none. */
+    /**
+     * Extra context for the error code; '' when there is none. For action
+     * errors it is WordPress's own message.
+     */
     public function detail(): string
     {
         return $this->detail;

@@ -52,6 +52,21 @@ class SidebarBuilderTest extends TestCase
 
                 return $this->panel;
             }
+
+            public function actionKeys(): array
+            {
+                return [];
+            }
+
+            public function previewOverride(string $action, array $params): ?array
+            {
+                return null;
+            }
+
+            public function mapConfirmCodes(string $action, array $codes, array $params): array
+            {
+                return $params;
+            }
         };
     }
 
@@ -290,10 +305,20 @@ class SidebarBuilderTest extends TestCase
         $this->assertCount(1, $vm['panels'][0]->rows()[0]->actions());
     }
 
-    public function test_actions_are_untouched_when_no_user_is_given(): void
+    public function test_actions_are_stripped_when_permissions_exist_but_no_user_is_given(): void
     {
-        $builder = new SidebarBuilder($this->logger(), $this->permissions('admins'));
+        $builder = new SidebarBuilder($this->logger(), $this->permissions('users'));
         $vm = $builder->build($this->ok(), [$this->feature('etransfers', $this->actionPanel())]);
+
+        $this->assertSame([], $vm['panels'][0]->rows()[0]->actions());
+    }
+
+    public function test_actions_are_untouched_without_permissions_or_user(): void
+    {
+        $vm = (new SidebarBuilder($this->logger()))->build(
+            $this->ok(),
+            [$this->feature('etransfers', $this->actionPanel())]
+        );
 
         $this->assertCount(1, $vm['panels'][0]->rows()[0]->actions());
     }

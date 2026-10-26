@@ -28,9 +28,10 @@ final class SidebarBuilder
 
     /**
      * @param Feature[] $features
-     * @param object|null $user The agent viewing the page. When given, row
-     *        actions they may not run are removed; without permission rules
-     *        that means all of them.
+     * @param object|null $user The agent viewing the page. Row actions they
+     *        may not run are removed; without a user, or without permission
+     *        rules, that means all of them. Only a builder with neither
+     *        leaves actions alone.
      * @return array{state: string, panels: Panel[], summary: ?string, activeTab: ?string}
      */
     public function build(ClientResult $result, array $features, $user = null): array
@@ -72,7 +73,7 @@ final class SidebarBuilder
      */
     private function withPermittedActions(Feature $feature, ?Panel $panel, $user): ?Panel
     {
-        if ($panel === null || $user === null) {
+        if ($panel === null || ($user === null && $this->permissions === null)) {
             return $panel;
         }
         if ($this->permissions !== null && $this->permissions->allows($user, $feature->key())) {

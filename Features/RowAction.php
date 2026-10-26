@@ -56,7 +56,7 @@ final class RowAction
         return http_build_query([
             'feature' => $this->feature,
             'action' => $this->action,
-            'params' => $this->params === [] ? '{}' : json_encode($this->params),
+            'params' => $this->params === [] ? '{}' : (string) json_encode($this->params, JSON_INVALID_UTF8_SUBSTITUTE),
         ], '', '&', PHP_QUERY_RFC3986);
     }
 }

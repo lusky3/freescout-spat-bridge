@@ -15,7 +15,10 @@ class SpatClient
 {
     private const PATH_PING = '/wp-json/spat/v1/freescout/ping';
     private const PATH_CUSTOMER = '/wp-json/spat/v1/freescout/customer';
+    private const PATH_ACTION = '/wp-json/spat/v1/freescout/action';
+    private const PATH_QUERY = '/wp-json/spat/v1/freescout/query';
     private const TIMEOUT = 3;
+    private const ACTION_TIMEOUT = 15;
     private const CONNECT_TIMEOUT = 2;
 
     /** @var ClientInterface */
@@ -49,8 +52,58 @@ class SpatClient
         return $this->post(self::PATH_CUSTOMER, (string) json_encode(['email' => $email]));
     }
 
-    private function post(string $path, string $body): ClientResult
+    /**
+     * Runs (or, with $dryRun, previews) a feature action in WordPress as the
+     * WordPress user with the agent's email. WordPress replays a completed
+     * non-dry run with the same idempotency key instead of running it again.
+     */
+    public function action(
+        string $feature,
+        string $action,
+        array $params,
+        bool $dryRun,
+        string $idempotencyKey,
+        string $actorEmail,
+        string $actorName
+    ): ClientResult {
+        return $this->post(self::PATH_ACTION, $this->encode([
+            'feature' => $feature,
+            'action' => $action,
+            'params' => $params === [] ? new \stdClass() : $params,
+            'dry_run' => $dryRun,
+            'idempotency_key' => $idempotencyKey,
+            'actor' => ['email' => $actorEmail, 'name' => $actorName],
+        ]), self::ACTION_TIMEOUT, true);
+    }
+
+    /**
+     * A read-only lookup a feature's pop-up needs, e.g. searching transfers.
+     */
+    public function query(string $feature, string $query, array $params): ClientResult
     {
+        return $this->post(self::PATH_QUERY, $this->encode([
+            'feature' => $feature,
+            'query' => $query,
+            'params' => $params === [] ? new \stdClass() : $params,
+        ]), self::ACTION_TIMEOUT, true);
+    }
+
+    private function encode(array $body): string
+    {
+        return (string) json_encode($body, JSON_INVALID_UTF8_SUBSTITUTE);
+    }
+
+    /**
+     * @param bool $actionErrors Map WordPress action errors (actor_unknown,
+     *        actor_forbidden, unknown_action, action_error) instead of
+     *        reporting them as a plain http_error.
+     */
+    private function post(
+        string $path,
+        string $body,
+        int $timeout = self::TIMEOUT,
+        bool $actionErrors = false
+    ): ClientResult {
         $baseUrl = trim((string) $this->options->get('spatbridge.wp_base_url', ''));
         $secret = (string) $this->options->get('spatbridge.shared_secret', '');
         if ($baseUrl === '' || $secret === '') {
@@ -69,7 +122,7 @@ class SpatClient
                     Signer::HEADER_SIGNATURE => Signer::sign($timestamp, $body, $secret),
                 ],
                 'body' => $body,
-                'timeout' => self::TIMEOUT,
+                'timeout' => $timeout,
                 'connect_timeout' => self::CONNECT_TIMEOUT,
                 'http_errors' => false,
                 // A redirect would turn the signed POST into a GET (301/302) or
@@ -105,7 +158,38 @@ class SpatClient
         $wpCode = is_array($decoded) && isset($decoded['code']) && is_string($decoded['code']) ? $decoded['code'] : '';
         $this->logger->warning('[SpatBridge] ' . $path . ' returned HTTP ' . $status . ' ' . $wpCode);
 
-        return ClientResult::failure($this->mapError($status, $wpCode), $status, $latency);
+        $code = $this->mapError($status, $wpCode);
+        if ($actionErrors && $code === 'http_error') {
+            $message = is_array($decoded) && isset($decoded['message']) && is_string($decoded['message'])
+                ? trim($decoded['message'])
+                : '';
+            $code = $this->mapActionError($wpCode, $message);
+            if ($code !== 'http_error') {
+                return ClientResult::failure($code, $status, $latency, $message);
+            }
+        }
+
+        return ClientResult::failure($code, $status, $latency);
+    }
+
+    /**
+     * Refines an http_error from the action or query route. Any error that
+     * carries a WordPress message becomes action_error, so the pop-up can
+     * show that message as is.
+     */
+    private function mapActionError(string $wpCode, string $message): string
+    {
+        switch ($wpCode) {
+            case 'spat_freescout_actor_unknown':
+                return 'actor_unknown';
+            case 'spat_freescout_actor_forbidden':
+                return 'actor_forbidden';
+            case 'spat_freescout_unknown_action':
+            case 'spat_freescout_unknown_query':
+                return 'unknown_action';
+        }
+
+        return $message === '' ? 'http_error' : 'action_error';
     }
 
     private function mapError(int $status, string $wpCode): string

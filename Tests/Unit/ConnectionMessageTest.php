@@ -66,4 +66,53 @@ class ConnectionMessageTest extends TestCase
             ConnectionMessage::describe(ClientResult::failure('redirected', 301, 12, 'https://www.wp.example'))
         );
     }
+
+    /**
+     * @return array<string, array{0: ClientResult, 1: string}>
+     */
+    public function actionCopy(): array
+    {
+        return [
+            'actor unknown shows the WP message' => [
+                ClientResult::failure('actor_unknown', 403, 0, 'No WordPress account for agent@x.test'),
+                'No WordPress account for agent@x.test',
+            ],
+            'actor unknown without a message' => [
+                ClientResult::failure('actor_unknown', 403),
+                'No WordPress account for your email address.',
+            ],
+            'actor forbidden' => [
+                ClientResult::failure('actor_forbidden', 403, 0, 'whatever WP says'),
+                "Your WordPress account isn't allowed to do this.",
+            ],
+            'unknown action' => [
+                ClientResult::failure('unknown_action', 404),
+                "WordPress doesn't support this action. Update SportsPress Admin Tools.",
+            ],
+            'action error is verbatim' => [
+                ClientResult::failure('action_error', 409, 0, 'Amounts differ: e-Transfer $300.00, order $325.00'),
+                'Amounts differ: e-Transfer $300.00, order $325.00',
+            ],
+            'actions wait 15 seconds' => [
+                ClientResult::failure('timeout'),
+                "WordPress didn't answer within 15 seconds.",
+            ],
+            'transport errors reuse the connection copy' => [
+                ClientResult::failure('network'),
+                "Couldn't reach WordPress. Check the site URL.",
+            ],
+            'http error reuses the connection copy' => [
+                ClientResult::failure('http_error', 502),
+                'WordPress returned an error (HTTP 502).',
+            ],
+        ];
+    }
+
+    /**
+     * @dataProvider actionCopy
+     */
+    public function test_action_message_copy(ClientResult $result, string $expected): void
+    {
+        $this->assertSame($expected, ConnectionMessage::actionMessage($result));
+    }
 }

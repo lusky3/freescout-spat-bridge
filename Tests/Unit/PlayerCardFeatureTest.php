@@ -180,4 +180,13 @@ class PlayerCardFeatureTest extends TestCase
         $this->assertSame('Solo', $panel->rows()[0]->title());
         $this->assertNull($feature->present(['player' => 'x', 'registration' => 7]));
     }
+
+    public function test_has_no_actions_yet(): void
+    {
+        $feature = new PlayerCardFeature();
+
+        $this->assertSame([], $feature->actionKeys());
+        $this->assertNull($feature->previewOverride('any', ['a' => 1]));
+        $this->assertSame(['a' => 1], $feature->mapConfirmCodes('any', ['code'], ['a' => 1]));
+    }
 }

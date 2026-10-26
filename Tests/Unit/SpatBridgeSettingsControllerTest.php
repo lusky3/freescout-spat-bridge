@@ -82,6 +82,21 @@ class SpatBridgeSettingsControllerTest extends TestCase
             {
                 return null;
             }
+
+            public function actionKeys(): array
+            {
+                return [];
+            }
+
+            public function previewOverride(string $action, array $params): ?array
+            {
+                return null;
+            }
+
+            public function mapConfirmCodes(string $action, array $codes, array $params): array
+            {
+                return $params;
+            }
         };
     }
 

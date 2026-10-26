@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   per-feature switches and ordering.
 - Row actions on sidebar panels, with a per-module "Who can run actions"
   setting (Admins / Admins + Users / Selected people).
+- Action pop-up: shows WordPress's dry-run preview, runs the action as the
+  agent's WordPress account once confirmed, and records the outcome as an
+  internal note on the ticket.
 - Settings page (Connection, Modules, Sidebar) with a Test connection button.
 - Conversation sidebar with stacked and tabbed layouts, a per-agent layout
   switch and a "League info unavailable" state.
