@@ -133,8 +133,25 @@ waitlist panels, and the ARL League settings page shows a warning.
 1. Enable the bridge's Waitlist feature under **Manage → Settings → ARL
    League**, section **Modules**.
 2. Compare the two panels on a few real tickets.
-3. Disable SplmWaitlist under **Manage → Modules**, remove
-   `/data/Modules/SplmWaitlist`, then restart the container.
+3. Disable SplmWaitlist first, and only then remove its files. The module
+   registers its sidebar hook while it is loaded, so deleting it while it is
+   active leaves a stale activation. Under **Manage → Modules → SportsPress
+   Waitlist Status**, press **Deactivate**. Or from the shell, as the web
+   server user and never as root:
+
+   ```sh
+   docker exec -u nginx -w /www/html freescout php artisan module:disable "SportsPress Waitlist Status"
+   docker exec -u nginx -w /www/html freescout php artisan freescout:clear-cache
+   ```
+
+   Then remove the module folder and its leftover public symlink if present
+   (`freescout:module-install` created it), and restart the container:
+
+   ```sh
+   docker exec freescout rm -rf /data/Modules/SplmWaitlist
+   docker exec freescout rm -f /www/html/public/modules/splmwaitlist
+   docker restart freescout
+   ```
 4. Later, a SPAT release removes the old `splm/v1/waitlist/customer-status`
    route and the `splm_freescout_secret` option. Until then, leave them alone.
 

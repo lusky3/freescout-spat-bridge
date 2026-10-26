@@ -15,10 +15,10 @@ use Modules\SpatBridge\Services\DatabaseEventStore;
 use Modules\SpatBridge\Services\EventCatalog;
 use Modules\SpatBridge\Services\EventSettings;
 use Modules\SpatBridge\Services\EventStoreInterface;
+use Modules\SpatBridge\Services\LegacyWaitlistCheck;
 use Modules\SpatBridge\Services\MailboxScope;
 use Modules\SpatBridge\Services\SidebarBuilder;
 use Modules\SpatBridge\Services\SpatClient;
-use Modules\SpatBridge\Services\LegacyWaitlistCheck;
 use Modules\SpatBridge\Services\TagService;
 use Modules\SpatBridge\Services\TicketCreator;
 use Modules\SpatBridge\Services\Support\LaravelOptionStore;
@@ -144,7 +144,9 @@ class SpatBridgeServiceProvider extends ServiceProvider
             $view->with('features', array_values($features));
             $view->with('featureOrder', $featureOrder);
 
-            $view->with('oldWaitlistActive', (new LegacyWaitlistCheck())->oldModuleActive());
+            $view->with('oldWaitlistActive', (new LegacyWaitlistCheck())->duplicatePanels(
+                isset($features['waitlist']) && $features['waitlist']['enabled']
+            ));
             $view->with('eventsUrl', route('spatbridge.events'));
             $view->with('events', (new EventSettings(
                 $options,

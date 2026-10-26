@@ -28,6 +28,12 @@ class LegacyWaitlistCheck
         }
     }
 
+    /** Two waitlist panels only show when both modules render one. */
+    public function duplicatePanels(bool $bridgeWaitlistEnabled): bool
+    {
+        return $bridgeWaitlistEnabled && $this->oldModuleActive();
+    }
+
     // @codeCoverageIgnoreStart
     //
     // FreeScout's module repository; the unit tests pass their own check.
