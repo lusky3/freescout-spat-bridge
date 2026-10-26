@@ -102,7 +102,13 @@ class SpatClient
     private function mapError(int $status, string $wpCode): string
     {
         if ($status === 403) {
-            return 'bad_signature';
+            if ($wpCode === 'spat_freescout_request_expired') {
+                return 'clock_skew';
+            }
+            if ($wpCode === 'spat_freescout_invalid_signature' || $wpCode === 'spat_freescout_missing_timestamp') {
+                return 'bad_signature';
+            }
+            return 'http_error';
         }
         if ($status === 503 && $wpCode === 'spat_freescout_not_configured') {
             return 'wp_not_configured';

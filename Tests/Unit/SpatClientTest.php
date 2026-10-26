@@ -104,7 +104,10 @@ class SpatClientTest extends TestCase
     {
         return [
             'invalid signature' => [$this->errorResponse(403, 'spat_freescout_invalid_signature'), 403, 'bad_signature'],
-            'request expired' => [$this->errorResponse(403, 'spat_freescout_request_expired'), 403, 'bad_signature'],
+            'missing timestamp' => [$this->errorResponse(403, 'spat_freescout_missing_timestamp'), 403, 'bad_signature'],
+            'request expired' => [$this->errorResponse(403, 'spat_freescout_request_expired'), 403, 'clock_skew'],
+            'non-spat 403 html' => [new Response(403, [], '<html>Forbidden by WAF</html>'), 403, 'http_error'],
+            'non-spat 403 json' => [$this->errorResponse(403, 'rest_forbidden'), 403, 'http_error'],
             'not configured on wp' => [$this->errorResponse(503, 'spat_freescout_not_configured'), 503, 'wp_not_configured'],
             'rate limited' => [$this->errorResponse(429, 'spat_freescout_rate_limited'), 429, 'rate_limited'],
             'server error' => [new Response(500, [], 'boom'), 500, 'http_error'],

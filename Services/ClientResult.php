@@ -54,7 +54,10 @@ final class ClientResult
         return $this->data;
     }
 
-    /** '' when ok. */
+    /**
+     * '' when ok; otherwise one of not_configured, network, timeout, bad_signature, clock_skew,
+     * wp_not_configured, rate_limited, http_error, bad_response.
+     */
     public function errorCode(): string
     {
         return $this->errorCode;
