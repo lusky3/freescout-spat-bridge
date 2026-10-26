@@ -5,6 +5,9 @@ namespace Modules\SpatBridge\Providers;
 use GuzzleHttp\Client;
 use Illuminate\Support\ServiceProvider;
 use Modules\SpatBridge\Features\FeatureRegistry;
+use Modules\SpatBridge\Services\ClientResult;
+use Modules\SpatBridge\Services\SidebarBuilder;
+use Modules\SpatBridge\Services\SpatClient;
 use Modules\SpatBridge\Services\Support\LaravelOptionStore;
 use Modules\SpatBridge\Services\Support\OptionBool;
 use Modules\SpatBridge\Services\Support\OptionStoreInterface;
@@ -44,6 +47,7 @@ class SpatBridgeServiceProvider extends ServiceProvider
         $this->loadRoutesFrom(__DIR__ . '/../Http/routes.php');
 
         $this->registerSettingsSection();
+        $this->registerSidebarPanel();
 
         // Feeds Resources/views/settings/index.blade.php so the view stays a
         // pure template.
@@ -128,5 +132,105 @@ class SpatBridgeServiceProvider extends ServiceProvider
             return 'spatbridge::settings.index';
         }, 20, 2);
     }
+
+    /**
+     * conversation.after_prev_convs fires as ($customer, $conversation,
+     * $mailbox) and the callback must echo its own output. Fail open: a bug
+     * here must never break the conversation page.
+     */
+    protected function registerSidebarPanel(): void
+    {
+        // Same filter and path convention FreeScout's layout and its modules
+        // use: \Module::getPublicPath(alias) is the module's public symlink.
+        \Eventy::addFilter('javascripts', function ($javascripts) {
+            $javascripts[] = \Module::getPublicPath('spatbridge') . '/js/sidebar.js';
+
+            return $javascripts;
+        });
+
+        \Eventy::addAction('conversation.after_prev_convs', function ($customer, $conversation, $mailbox) {
+            try {
+                if (!is_object($mailbox) || !$this->shouldShowForMailbox((int) $mailbox->id)) {
+                    return;
+                }
+
+                $email = $this->customerEmail($customer, $conversation);
+                if ($email === '') {
+                    return;
+                }
+
+                $options = $this->app->make(OptionStoreInterface::class);
+                $builder = new SidebarBuilder($this->app->make(LoggerInterface::class));
+                $viewModel = $builder->build(
+                    $this->cachedResult($email),
+                    $this->app->make(FeatureRegistry::class)->enabled($options)
+                );
+                if ($viewModel['state'] === 'empty') {
+                    return;
+                }
+
+                $viewModel['layoutDefault'] = $options->get('spatbridge.layout_default', 'stacked') === 'tabbed'
+                    ? 'tabbed'
+                    : 'stacked';
+                $viewModel['allowSwitch'] = OptionBool::from($options->get('spatbridge.allow_agent_switch', true), true);
+
+                echo view('spatbridge::sidebar', $viewModel)->render();
+            } catch (\Throwable $e) {
+                \Log::error('[SpatBridge] sidebar render failed: ' . $e->getMessage());
+            }
+        }, 20, 3);
+    }
     // @codeCoverageIgnoreEnd
+
+    /**
+     * @param mixed $customer
+     * @param mixed $conversation
+     */
+    private function customerEmail($customer, $conversation): string
+    {
+        $email = '';
+        if (is_object($customer) && method_exists($customer, 'getMainEmail')) {
+            $email = trim((string) $customer->getMainEmail());
+        }
+        if ($email === '' && is_object($conversation) && isset($conversation->customer_email)) {
+            $email = trim((string) $conversation->customer_email);
+        }
+
+        return $email;
+    }
+
+    /**
+     * Empty or missing `spatbridge.mailboxes` means every mailbox.
+     */
+    private function shouldShowForMailbox(int $mailboxId): bool
+    {
+        $selected = $this->app->make(OptionStoreInterface::class)->get('spatbridge.mailboxes', []);
+        if (!is_array($selected) || $selected === []) {
+            return true;
+        }
+
+        return in_array($mailboxId, array_map('intval', $selected), true);
+    }
+
+    /**
+     * One-minute cache (Laravel 5.5 TTLs are minutes) of the decoded data
+     * only: a layout switch never refetches, and a WordPress outage isn't
+     * pinned for a minute after recovery because failures aren't cached.
+     */
+    private function cachedResult(string $email): ClientResult
+    {
+        $cacheKey = 'spatbridge.customer.' . md5(strtolower($email));
+
+        $cached = \Cache::get($cacheKey);
+        if (is_array($cached)) {
+            return ClientResult::success(200, $cached, 0);
+        }
+
+        $result = $this->app->make(SpatClient::class)->customer($email);
+        if ($result->ok() && is_array($result->data())) {
+            \Cache::put($cacheKey, $result->data(), 1);
+        }
+
+        return $result;
+    }
 }

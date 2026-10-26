@@ -14,3 +14,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feature contract, `Panel`/`PanelRow` model and `FeatureRegistry` with
   per-feature switches and ordering.
 - Settings page (Connection, Modules, Sidebar) with a Test connection button.
+- Conversation sidebar with stacked and tabbed layouts, a per-agent layout
+  switch and a "League info unavailable" state.

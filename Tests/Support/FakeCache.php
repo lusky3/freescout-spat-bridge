@@ -35,6 +35,25 @@ class FakeCache
         return self::$store[$key] = $callback();
     }
 
+    /**
+     * @param mixed $default
+     * @return mixed
+     */
+    public static function get(string $key, $default = null)
+    {
+        return array_key_exists($key, self::$store) ? self::$store[$key] : $default;
+    }
+
+    /**
+     * @param mixed $value
+     * @param mixed $ttl
+     */
+    public static function put(string $key, $value, $ttl): void
+    {
+        self::$calls[] = [$key, $ttl];
+        self::$store[$key] = $value;
+    }
+
     public static function reset(): void
     {
         self::$store = [];
