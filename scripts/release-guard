@@ -97,6 +97,12 @@ if ($mode === 'pr' && $arg !== '') {
 
     $base = implode("\n", git('show', $arg . ':CHANGELOG.md'));
     $head = (string) file_get_contents('CHANGELOG.md');
+    $module = json_decode((string) file_get_contents('module.json'), true);
+    $moduleVersion = is_array($module) && isset($module['version']) ? (string) $module['version'] : '';
+    if (ReleaseGuard::releaseSectionAdded($base, $head, $moduleVersion)) {
+        echo "Release PR: CHANGELOG.md gained a ## [$moduleVersion] section matching module.json.\n";
+        exit(0);
+    }
     if (!ReleaseGuard::unreleasedGained($base, $head)) {
         failWith([
             'This PR changes shipped files (' . implode(', ', array_slice($shipped, 0, 5))

@@ -63,6 +63,28 @@ final class ReleaseGuard
     }
 
     /**
+     * True for a release PR: the head changelog has a non-empty "## [X.Y.Z]"
+     * section the base lacks, and the head module.json version is X.Y.Z. Such a
+     * PR moves the [Unreleased] bullets under the new heading, so it gains no
+     * new [Unreleased] bullet.
+     */
+    public static function releaseSectionAdded(
+        string $baseChangelog,
+        string $headChangelog,
+        string $headModuleVersion
+    ): bool {
+        if (!self::isValidVersion($headModuleVersion)) {
+            return false;
+        }
+
+        $section = self::changelogSection($headChangelog, $headModuleVersion);
+
+        return $section !== null
+            && $section !== ''
+            && self::changelogSection($baseChangelog, $headModuleVersion) === null;
+    }
+
+    /**
      * @param string[] $shippedChangedSincePreviousTag
      * @return string[] Human-readable errors; empty means OK.
      */

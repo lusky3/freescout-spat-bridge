@@ -87,6 +87,23 @@ MD;
         $this->assertTrue(ReleaseGuard::unreleasedGained('', $base));
     }
 
+    public function test_release_section_added(): void
+    {
+        $base = "## [Unreleased]\n\n- Foo\n\n## [0.1.0]\n\n- Old\n";
+        $release = "## [Unreleased]\n\n## [0.2.0] - 2026-11-01\n\n- Foo\n\n## [0.1.0]\n\n- Old\n";
+
+        // Release PR: new non-empty section matching the bumped module.json.
+        $this->assertTrue(ReleaseGuard::releaseSectionAdded($base, $release, '0.2.0'));
+        // module.json not bumped to the new section's version.
+        $this->assertFalse(ReleaseGuard::releaseSectionAdded($base, $release, '0.1.0'));
+        // Empty new section.
+        $empty = "## [Unreleased]\n\n- Foo\n\n## [0.2.0]\n\n## [0.1.0]\n\n- Old\n";
+        $this->assertFalse(ReleaseGuard::releaseSectionAdded($base, $empty, '0.2.0'));
+        // Section already existed in the base.
+        $this->assertFalse(ReleaseGuard::releaseSectionAdded($release, $release, '0.2.0'));
+        $this->assertFalse(ReleaseGuard::releaseSectionAdded($base, $release, 'bad'));
+    }
+
     public function test_tag_errors_lists_every_problem(): void
     {
         $shipped = ['Services/Foo.php'];
