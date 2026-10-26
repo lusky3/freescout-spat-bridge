@@ -996,6 +996,32 @@ class ActionControllerTest extends TestCase
         $this->assertSame('spatbridge::action.preview', $controller->rendered[0][0]);
     }
 
+    public function test_conversation_in_the_events_mailbox_is_allowed_when_not_selected(): void
+    {
+        // Conversation 77 lives in mailbox 3 (see setUp).
+        $this->options->set('spatbridge.mailboxes', [9]);
+        $this->options->set('spatbridge.events.mailbox_id', 3);
+        $this->client->results[] = $this->dryRun();
+        $controller = $this->controller();
+
+        $controller->preview($this->previewRequest($this->user()));
+
+        $this->assertSame('spatbridge::action.preview', $controller->rendered[0][0]);
+    }
+
+    public function test_events_mailbox_setting_does_not_open_other_unselected_mailboxes(): void
+    {
+        $this->options->set('spatbridge.mailboxes', [9]);
+        $this->options->set('spatbridge.events.mailbox_id', 6);
+        $controller = $this->controller();
+
+        $controller->preview($this->previewRequest($this->user()));
+
+        $this->assertSame('spatbridge::action.error', $controller->rendered[0][0]);
+        $this->assertSame(403, $controller->run($this->runRequest($this->user()))->getStatusCode());
+        $this->assertSame([], $this->client->calls);
+    }
+
     // ---- query -----------------------------------------------------------
 
     private function queryRequest($user, array $overrides = []): Request

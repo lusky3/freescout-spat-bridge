@@ -207,6 +207,24 @@ class EventRouterTest extends TestCase
         $this->assertSame([], $this->created);
     }
 
+    public function test_the_events_mailbox_is_in_scope_even_when_not_selected(): void
+    {
+        // The bridge's own tickets land in the events mailbox; the next event
+        // for the customer must find them rather than open another ticket.
+        $this->options->set('spatbridge.mailboxes', [3]);
+        $this->options->set('spatbridge.events.mailbox_id', 8);
+        $this->options->set('spatbridge.events.etransfer.unmatched.create', true);
+        $router = $this->router([self::EMAIL => [
+            $this->conversation(21, 8),
+            $this->conversation(22, 5),
+        ]]);
+
+        $result = $router->route($this->event());
+
+        $this->assertSame(['outcome' => 'noted', 'conversation_ids' => [21], 'detail' => ''], $result);
+        $this->assertSame([], $this->created);
+    }
+
     public function test_no_mailbox_selection_means_every_mailbox(): void
     {
         $router = $this->router([self::EMAIL => [$this->conversation(11, 3), $this->conversation(13, 5)]]);

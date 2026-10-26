@@ -72,6 +72,18 @@ class SpatBridgeServiceProviderTest extends TestCase
         $this->assertFalse($this->invoke($provider, 'shouldShowForMailbox', [6]));
     }
 
+    public function test_events_mailbox_always_shows_the_panel(): void
+    {
+        $options = new FakeOptionStore();
+        $provider = $this->provider($options);
+        $options->set('spatbridge.mailboxes', [3]);
+        $options->set('spatbridge.events.mailbox_id', '8');
+
+        $this->assertTrue($this->invoke($provider, 'shouldShowForMailbox', [8]));
+        $this->assertTrue($this->invoke($provider, 'shouldShowForMailbox', [3]));
+        $this->assertFalse($this->invoke($provider, 'shouldShowForMailbox', [6]));
+    }
+
     public function test_customer_email_prefers_customer_then_conversation(): void
     {
         $provider = $this->provider();

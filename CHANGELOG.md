@@ -60,6 +60,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The mailbox new event tickets go to is always in ARL League's scope, even
+  when "Show in mailboxes" doesn't list it: later events find the ticket
+  instead of opening another, and its sidebar and actions work.
 - The settings page script carries FreeScout's CSP nonce and has no inline
   handlers, so Test connection, the secret's Show toggle and the card order
   buttons work in the browser.

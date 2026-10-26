@@ -138,7 +138,7 @@
                     <option value="{{ $mailbox['id'] }}" {{ in_array($mailbox['id'], $selectedMailboxes, true) ? 'selected' : '' }}>{{ $mailbox['name'] }}</option>
                 @endforeach
             </select>
-            <span class="help-block">{{ __('Leave empty to show in all mailboxes.') }}</span>
+            <span class="help-block">{{ __('Leave empty to show in all mailboxes. The mailbox new event tickets go to is always included.') }}</span>
         </div>
     </div>
 
@@ -241,7 +241,7 @@
                     <option value="{{ $mailbox['id'] }}" {{ (int) old('events_mailbox_id', $events['mailboxId']) === $mailbox['id'] ? 'selected' : '' }}>{{ $mailbox['name'] }}</option>
                 @endforeach
             </select>
-            <span class="help-block">{{ __('Required when any create switch is on. Nothing is emailed to the customer unless an agent replies.') }}</span>
+            <span class="help-block">{{ __('Required when any create switch is on. ARL League always works in this mailbox, even if it isn\'t selected above. Nothing is emailed to the customer unless an agent replies.') }}</span>
             @if ($errors->has('events_mailbox_id'))
                 <span class="help-block">{{ $errors->first('events_mailbox_id') }}</span>
             @endif
