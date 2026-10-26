@@ -62,6 +62,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   WordPress event checks.
 - README: the end-to-end section names the sandbox workarounds the script
   still needs (repeated cron passes, waiting for the sandbox setup to exit).
+- README: after `docker restart`, wait for FreeScout to finish booting before
+  `module:enable` (run too early it fails with "Module [ARL League] does not
+  exist!"); the verification note says the Install and Upgrading steps were
+  run as written on `nfrastack/freescout:2.2.21`.
 
 ### Fixed
 

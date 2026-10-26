@@ -41,13 +41,10 @@ points to `/data/Modules` and the web server runs as `nginx:www-data`, in a
 container named `freescout`. On another install, use its `Modules/` directory
 and its web server user.
 
-What has been checked: steps 1 to 7 were run on a local
-`nfrastack/freescout:2.2.21` stack (FreeScout 1.8.248, PHP 8.5) with a
-`git archive` of an early version of the module (player card only), extracted
-into `/data/Modules`. The release zip is the same archive. The upgrade steps
-and the events table's migration haven't been run on that image; the
-end-to-end tests run the same `freescout:module-install` command, migration
-included, on a plain FreeScout container.
+What has been checked: the Install steps and the Upgrading steps below were
+run exactly as written on `nfrastack/freescout:2.2.21` (FreeScout 1.8.248,
+PHP 8.5.12), using a release zip built with `git archive`, followed by the
+21-check end-to-end suite.
 
 Run every `php artisan` command as the web server user, never as root. Files
 that root creates in FreeScout's cache are unwritable for the web server, and
@@ -77,7 +74,11 @@ the sidebar then shows nothing.
    docker exec freescout chown -R nginx:www-data /data/Modules/SpatBridge
    ```
 
-4. Restart the container: `docker restart freescout`.
+4. Restart the container: `docker restart freescout`, then wait until
+   FreeScout has finished booting (about 15 seconds): the login page loads,
+   or `docker logs freescout` shows "Initialization Complete". Running step 5
+   too early fails with `Module [ARL League] does not exist!`; run it again
+   once the boot has finished.
 5. Enable and install the module as the web server user. A restart alone
    leaves it Disabled:
 
@@ -169,7 +170,8 @@ and 2:
    The module stays enabled; `module:enable` isn't needed again.
 
 4. Restart the container, as in Install step 4, so PHP drops the old code:
-   `docker restart freescout`.
+   `docker restart freescout`. Wait for FreeScout to finish booting (the login
+   page loads) before running any further `php artisan` command.
 
 ### Migrating from SplmWaitlist
 
