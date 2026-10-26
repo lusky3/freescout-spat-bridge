@@ -88,6 +88,11 @@ class ActionControllerTest extends TestCase
                 return ['match', 'unmatch'];
             }
 
+            public function queryKeys(): array
+            {
+                return ['search', 'order'];
+            }
+
             public function previewOverride(string $action, array $params): ?array
             {
                 return $this->override;
@@ -750,6 +755,45 @@ class ActionControllerTest extends TestCase
         $this->assertCount(1, Thread::$created);
     }
 
+    public function test_run_refuses_a_confirm_code_the_preview_did_not_ask_for(): void
+    {
+        $controller = $this->controller();
+        array_unshift($this->client->results, $this->dryRun(['requires_confirm' => []]));
+        $controller->preview($this->previewRequest($this->user()));
+        $this->previewKey = end($this->client->calls)[1]['key'];
+        $this->client->calls = [];
+
+        $response = $controller->run($this->runRequest($this->user(), ['confirm' => ['amount_mismatch']]));
+
+        $this->assertSame(409, $response->getStatusCode());
+        $this->assertSame(ActionController::PREVIEW_EXPIRED, $this->json($response)['msg']);
+        $this->assertSame([], $this->client->calls);
+        $this->assertCount(0, Thread::$created);
+    }
+
+    public function test_run_refuses_one_unknown_code_among_allowed_ones(): void
+    {
+        $controller = $this->controller();
+        $this->previewed($controller);
+
+        $response = $controller->run($this->runRequest($this->user(), ['confirm' => ['amount_mismatch', 'force']]));
+
+        $this->assertSame(409, $response->getStatusCode());
+        $this->assertSame([], $this->client->calls);
+    }
+
+    public function test_run_with_a_garbled_stored_preview_is_refused(): void
+    {
+        $controller = $this->controller();
+        $this->previewed($controller);
+        FakeCache::$store['spatbridge.preview.' . md5($this->previewKey)] = 'not json';
+
+        $response = $controller->run($this->runRequest($this->user()));
+
+        $this->assertSame(409, $response->getStatusCode());
+        $this->assertSame([], $this->client->calls);
+    }
+
     public function test_a_failed_preview_binds_nothing(): void
     {
         $this->client->results = [ClientResult::failure('network')];
@@ -873,6 +917,28 @@ class ActionControllerTest extends TestCase
 
         $this->assertSame(403, $response->getStatusCode());
         $this->assertSame([], $this->client->calls);
+    }
+
+    public function test_query_refuses_a_name_the_feature_does_not_declare(): void
+    {
+        $response = $this->controller()->query($this->queryRequest($this->user(), ['query' => 'ping']));
+
+        $this->assertSame(404, $response->getStatusCode());
+        $this->assertSame('error', $this->json($response)['status']);
+        $this->assertSame([], $this->client->calls);
+    }
+
+    public function test_query_wraps_a_single_object_result_in_a_list(): void
+    {
+        $order = ['order_id' => 5107, 'status' => 'on-hold', 'total' => '325.00', 'on_hold' => true];
+        $this->client->results[] = ClientResult::success(200, ['results' => $order], 1);
+
+        $response = $this->controller()->query($this->queryRequest($this->user(), [
+            'query' => 'order',
+            'params' => '{"order_id":5107}',
+        ]));
+
+        $this->assertSame(['status' => 'success', 'results' => [$order]], $this->json($response));
     }
 
     public function test_query_refuses_a_malformed_query_name(): void

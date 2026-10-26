@@ -4,6 +4,7 @@ namespace Modules\SpatBridge\Providers;
 
 use GuzzleHttp\Client;
 use Illuminate\Support\ServiceProvider;
+use Modules\SpatBridge\Features\ETransfers\ETransfersFeature;
 use Modules\SpatBridge\Features\FeatureRegistry;
 use Modules\SpatBridge\Features\PlayerCard\PlayerCardFeature;
 use Modules\SpatBridge\Services\ActionPermissions;
@@ -50,6 +51,7 @@ class SpatBridgeServiceProvider extends ServiceProvider
         $this->loadRoutesFrom(__DIR__ . '/../Http/routes.php');
 
         $this->app->make(FeatureRegistry::class)->register(new PlayerCardFeature());
+        $this->app->make(FeatureRegistry::class)->register(new ETransfersFeature());
 
         $this->registerSettingsSection();
         $this->registerSidebarPanel();

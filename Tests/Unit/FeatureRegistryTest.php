@@ -45,6 +45,11 @@ class FeatureRegistryTest extends TestCase
                 return [];
             }
 
+            public function queryKeys(): array
+            {
+                return [];
+            }
+
             public function previewOverride(string $action, array $params): ?array
             {
                 return null;

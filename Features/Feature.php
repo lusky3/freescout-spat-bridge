@@ -36,6 +36,14 @@ interface Feature
     public function actionKeys(): array;
 
     /**
+     * The read-only queries a pop-up of this feature may run, e.g.
+     * ['search']. The query endpoint refuses any name not listed here.
+     *
+     * @return string[]
+     */
+    public function queryKeys(): array;
+
+    /**
      * A view to show in the pop-up instead of the dry-run preview, e.g. a
      * picker when the action still lacks a parameter.
      *

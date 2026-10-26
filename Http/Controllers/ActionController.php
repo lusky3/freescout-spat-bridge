@@ -29,7 +29,6 @@ class ActionController extends Controller
     private const PREVIEW_VIEW = 'spatbridge::action.preview';
     private const ERROR_VIEW = 'spatbridge::action.error';
     private const KEY_PATTERN = '/^[A-Za-z0-9-]{8,64}$/';
-    private const QUERY_PATTERN = '/^[a-z0-9_]{1,64}$/';
     // Laravel 5.5 cache TTLs are minutes; WordPress keeps replays for 24 h.
     private const NOTED_TTL = 1440;
     // Minutes an agent has between seeing a preview and confirming it.
@@ -92,9 +91,12 @@ class ActionController extends Controller
             return $this->renderView(self::ERROR_VIEW, ['message' => ConnectionMessage::actionMessage($result)], 200);
         }
 
-        \Cache::put($this->previewCacheKey($key), $this->previewBinding($context), self::PREVIEW_TTL);
-
         $data = $result->data() ?: [];
+        \Cache::put(
+            $this->previewCacheKey($key),
+            json_encode(['hash' => $this->previewBinding($context), 'codes' => $this->allowedCodes($data)]),
+            self::PREVIEW_TTL
+        );
 
         return $this->renderView(self::PREVIEW_VIEW, array_merge($base, [
             'idempotencyKey' => $key,
@@ -118,11 +120,17 @@ class ActionController extends Controller
 
         // Hashed before the confirm codes are mapped, so ticking a box can't
         // change what was previewed.
-        if (\Cache::get($this->previewCacheKey($key)) !== $this->previewBinding($context)) {
+        $stored = json_decode((string) \Cache::get($this->previewCacheKey($key)), true);
+        if (!is_array($stored) || ($stored['hash'] ?? null) !== $this->previewBinding($context)) {
             return $this->error(__(self::PREVIEW_EXPIRED), 409);
         }
 
+        // Only conditions the preview showed may be confirmed.
         $codes = array_values(array_filter((array) $request->input('confirm', []), 'is_string'));
+        $allowed = is_array($stored['codes'] ?? null) ? $stored['codes'] : [];
+        if (array_diff($codes, $allowed) !== []) {
+            return $this->error(__(self::PREVIEW_EXPIRED), 409);
+        }
         /** @var Feature $feature */
         $feature = $context['feature'];
         $context['params'] = $feature->mapConfirmCodes($context['name'], $codes, $context['params']);
@@ -160,15 +168,20 @@ class ActionController extends Controller
         }
 
         $data = $result->data() ?: [];
-        $results = isset($data['results']) && is_array($data['results']) ? array_values($data['results']) : [];
+        $results = isset($data['results']) && is_array($data['results']) ? $data['results'] : [];
+        // WordPress wraps whatever the query returns, so a single record
+        // (e.g. one order) arrives as an object, not a list.
+        if ($results !== [] && array_keys($results) !== range(0, count($results) - 1)) {
+            $results = [$results];
+        }
 
-        return new JsonResponse(['status' => 'success', 'results' => $results]);
+        return new JsonResponse(['status' => 'success', 'results' => array_values($results)]);
     }
 
     /**
      * The checks every endpoint runs, in order: the agent can see the
-     * conversation, may run this feature's actions, and the action (or a
-     * well-formed query name) belongs to the feature.
+     * conversation, may run this feature's actions, and the action (or
+     * query) belongs to the feature.
      *
      * @return array{error: array{0: int, 1: string}}|array{conversation: object, user: object,
      *         feature: Feature, name: string, params: array}
@@ -195,9 +208,7 @@ class ActionController extends Controller
             return ['error' => [403, __(self::NO_PERMISSION)]];
         }
 
-        $known = $isAction
-            ? in_array($name, $feature->actionKeys(), true)
-            : preg_match(self::QUERY_PATTERN, $name) === 1;
+        $known = in_array($name, $isAction ? $feature->actionKeys() : $feature->queryKeys(), true);
         if (!$known) {
             return ['error' => [404, __("This action isn't available.")]];
         }
@@ -215,6 +226,14 @@ class ActionController extends Controller
             'name' => $name,
             'params' => $params,
         ];
+    }
+
+    /**
+     * @return string[] The confirmation codes the dry run asked for.
+     */
+    private function allowedCodes(array $data): array
+    {
+        return array_values(array_unique(array_column($this->confirms($data), 'code')));
     }
 
     private function previewCacheKey(string $key): string
