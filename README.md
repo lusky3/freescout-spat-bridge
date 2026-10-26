@@ -124,6 +124,20 @@ and `https://<helpdesk>/modules/spatbridge/js/sidebar.js` returns 200. The
 module survives restarts and redeploys as long as the `/data` and `/www/html`
 volumes persist.
 
+### Migrating from SplmWaitlist
+
+The bridge's Waitlist feature replaces the older standalone SplmWaitlist
+module (freescout-splm-waitlist). While both are active, agents see two
+waitlist panels, and the ARL League settings page shows a warning.
+
+1. Enable the bridge's Waitlist feature under **Manage → Settings → ARL
+   League**, section **Modules**.
+2. Compare the two panels on a few real tickets.
+3. Disable SplmWaitlist under **Manage → Modules**, remove
+   `/data/Modules/SplmWaitlist`, then restart the container.
+4. Later, a SPAT release removes the old `splm/v1/waitlist/customer-status`
+   route and the `splm_freescout_secret` option. Until then, leave them alone.
+
 ### Development install (git clone)
 
 For development, clone the repository instead of extracting a release, then

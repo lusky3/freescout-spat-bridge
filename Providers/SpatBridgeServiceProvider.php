@@ -18,6 +18,7 @@ use Modules\SpatBridge\Services\EventStoreInterface;
 use Modules\SpatBridge\Services\MailboxScope;
 use Modules\SpatBridge\Services\SidebarBuilder;
 use Modules\SpatBridge\Services\SpatClient;
+use Modules\SpatBridge\Services\LegacyWaitlistCheck;
 use Modules\SpatBridge\Services\TagService;
 use Modules\SpatBridge\Services\TicketCreator;
 use Modules\SpatBridge\Services\Support\LaravelOptionStore;
@@ -143,6 +144,7 @@ class SpatBridgeServiceProvider extends ServiceProvider
             $view->with('features', array_values($features));
             $view->with('featureOrder', $featureOrder);
 
+            $view->with('oldWaitlistActive', (new LegacyWaitlistCheck())->oldModuleActive());
             $view->with('eventsUrl', route('spatbridge.events'));
             $view->with('events', (new EventSettings(
                 $options,

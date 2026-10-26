@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Migration notes for SplmWaitlist in the README, and a settings-page warning
+  while SplmWaitlist and the bridge are both active.
 - Player card actions: Change email… on the first player row (previews every
   record that will change) and Re-run registration on each "registration not
   completed" row.

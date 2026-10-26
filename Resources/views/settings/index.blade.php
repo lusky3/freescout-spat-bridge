@@ -49,6 +49,12 @@
         </div>
     </div>
 
+    @if (!empty($oldWaitlistActive))
+        <div class="alert alert-warning" role="alert">
+            {{ __('The SportsPress Waitlist (SplmWaitlist) module is still active. Agents will see two waitlist panels until you disable it.') }}
+        </div>
+    @endif
+
     <h4>2 &middot; {{ __('Modules') }}</h4>
 
     <table class="table table-condensed">
