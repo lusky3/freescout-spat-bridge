@@ -101,8 +101,18 @@ class ActionPermissionsTest extends TestCase
             'json scalar' => ['5'],
             'unknown mode' => ['{"mode":"everyone","user_ids":[1]}'],
             'mode not a string' => ['{"mode":["admins"]}'],
-            'array value' => [['mode' => 'admins']],
+            'array with bad mode' => [['mode' => 'everyone']],
         ];
+    }
+
+    public function test_an_already_decoded_array_value_is_applied(): void
+    {
+        $store = new FakeOptionStore();
+        $store->set('spatbridge.features.etransfers.actors', ['mode' => 'selected', 'user_ids' => [3]]);
+        $p = new ActionPermissions($store);
+
+        $this->assertSame('selected', $p->mode('etransfers'));
+        $this->assertSame([3], $p->selectedUserIds('etransfers'));
     }
 
     public function test_bad_user_ids_are_dropped(): void

@@ -295,12 +295,25 @@ class SpatBridgeSettingsControllerTest extends TestCase
 
         $this->assertSame(
             ['mode' => 'selected', 'user_ids' => [4, 9]],
-            json_decode($store->get('spatbridge.features.player_card.actors'), true)
+            $store->get('spatbridge.features.player_card.actors')
         );
         $this->assertSame(
             ['mode' => 'users', 'user_ids' => []],
-            json_decode($store->get('spatbridge.features.waitlist.actors'), true)
+            $store->get('spatbridge.features.waitlist.actors')
         );
+    }
+
+    public function test_saved_actors_are_applied_when_read_back_through_a_freescout_like_store(): void
+    {
+        $store = $this->store();
+
+        $this->controller($store)->save($this->request(['actors' => [
+            'player_card' => ['mode' => 'selected', 'user_ids' => ['4', '9']],
+        ]]));
+
+        $permissions = new \Modules\SpatBridge\Services\ActionPermissions($store);
+        $this->assertSame('selected', $permissions->mode('player_card'));
+        $this->assertSame([4, 9], $permissions->selectedUserIds('player_card'));
     }
 
     public function test_actors_for_unknown_features_are_ignored(): void

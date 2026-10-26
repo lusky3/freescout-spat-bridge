@@ -77,11 +77,12 @@ final class ActionPermissions
     private function stored(string $featureKey): array
     {
         $raw = $this->options->get('spatbridge.features.' . $featureKey . '.actors', '');
-        if (!is_string($raw) || $raw === '') {
-            return [];
+        // \Option::get() json_decodes any stored string starting with "{" or
+        // "[", so the value comes back as an array in production.
+        if (is_string($raw) && $raw !== '') {
+            $raw = json_decode($raw, true);
         }
-
-        $decoded = json_decode($raw, true);
+        $decoded = $raw;
 
         // Without a valid mode the whole entry is unusable, ids included.
         return is_array($decoded)
