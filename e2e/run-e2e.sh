@@ -588,9 +588,11 @@ for _ in $(seq 1 20); do
 done
 [ "$FREESCOUT_UP" = yes ] || echo "WARN: ${FREESCOUT_URL}/login did not answer 2xx within 20 s of starting freescout-web." >&2
 
-# SPAT must have scheduled the retry itself (60 s after the failure). Only
-# that existing cron event and the row's next_attempt_at are moved into the
-# past; nothing is scheduled here, so a lost retry still fails the check.
+# SPAT must have scheduled the retry itself (60 s after the failure). Any
+# retry SPAT scheduled counts, even one already due because freescout-web
+# was slow to come back. Only that existing cron event and the row's
+# next_attempt_at are moved into the past; nothing is scheduled here, so a
+# lost retry still fails the check.
 MOVED=$(wp_eval '
     global $wpdb;
     $id   = getenv( "EVENT_ID" );
@@ -599,10 +601,6 @@ MOVED=$(wp_eval '
     $ts   = wp_next_scheduled( $hook, $args );
     if ( ! $ts ) {
         echo "no retry scheduled";
-        return;
-    }
-    if ( $ts <= time() ) {
-        echo "retry scheduled at " . gmdate( "H:i:s", $ts ) . ", not in the future";
         return;
     }
     $key   = md5( serialize( $args ) );

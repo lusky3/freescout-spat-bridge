@@ -891,6 +891,11 @@ $spatbridgeE2e = new class {
      * `conversation.created_by_user`, which carries the conversation (so its
      * customer_email) and sends nothing in core.
      *
+     * SendNotificationToUsers also goes on `emails`, but it mails agents
+     * subscribed to the mailbox (e.g. about the new note), never the
+     * customer, so it isn't counted as customer mail. It is still reported if
+     * its payload names $address.
+     *
      * @return array{emails: string[], unexpected: string[]}
      */
     private function queuedSince(int $since, string $address): array
@@ -904,7 +909,7 @@ $spatbridgeE2e = new class {
             $action = preg_match('/s:6:"action";s:\d+:"([^"]*)"/', $command, $m) ? $m[1] : '';
             $label = '#' . $job->id . ' ' . $class . ($action === '' ? '' : ' ' . $action);
 
-            if ($job->queue === 'emails') {
+            if ($job->queue === 'emails' && $class !== 'App\\Jobs\\SendNotificationToUsers') {
                 $found['emails'][] = $label;
             } elseif (
                 strpos($payload, $address) !== false
@@ -919,9 +924,10 @@ $spatbridgeE2e = new class {
 
     /**
      * Positive control for queuedSince(): inside a transaction that is rolled
-     * back, a job on the emails queue and a job naming a marker address must
-     * both be reported, so a renamed table, column or queue can't make the
-     * real check pass silently.
+     * back, a job on the emails queue, a job naming a marker address, and an
+     * agent notification on the emails queue naming it must all be reported,
+     * so a renamed table, column or queue, or the agent-notification
+     * exception, can't make the real check pass silently.
      */
     private function jobsQueryControl(): string
     {
@@ -930,10 +936,10 @@ $spatbridgeE2e = new class {
         }
         $marker = 'spatbridge-e2e-control-' . bin2hex(random_bytes(6)) . '@example.test';
         $since = (int) \DB::table('jobs')->max('id');
-        $row = function (string $queue) use ($marker): array {
+        $row = function (string $queue, string $class = 'SpatBridgeE2eControl') use ($marker): array {
             return [
                 'queue' => $queue,
-                'payload' => json_encode(['displayName' => 'SpatBridgeE2eControl', 'data' => ['command' => 'to ' . $marker]]),
+                'payload' => json_encode(['displayName' => $class, 'data' => ['command' => 'to ' . $marker]]),
                 'attempts' => 0,
                 'reserved_at' => null,
                 'available_at' => time() + 86400,
@@ -942,13 +948,18 @@ $spatbridgeE2e = new class {
         };
         \DB::beginTransaction();
         try {
-            \DB::table('jobs')->insert([$row('emails'), $row('default')]);
+            \DB::table('jobs')->insert([
+                $row('emails'),
+                $row('default'),
+                $row('emails', 'App\\Jobs\\SendNotificationToUsers'),
+            ]);
             $found = $this->queuedSince($since, $marker);
         } finally {
             \DB::rollBack();
         }
-        if (count($found['emails']) !== 1 || count($found['unexpected']) !== 1) {
-            return 'the jobs control saw ' . json_encode($found) . ', expected one emails job and one job naming the marker';
+        if (count($found['emails']) !== 1 || count($found['unexpected']) !== 2) {
+            return 'the jobs control saw ' . json_encode($found)
+                . ', expected one emails job and two jobs naming the marker (one an agent notification)';
         }
 
         return '';
