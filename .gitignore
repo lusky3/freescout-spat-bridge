@@ -1,0 +1,11 @@
+/vendor
+/docker/freescout
+.phpunit.cache
+.phpunit.result.cache
+*.log
+/logs/
+
+# Planning docs and agent tooling stay local
+/docs/superpowers/
+.superpowers/
+.claude/
