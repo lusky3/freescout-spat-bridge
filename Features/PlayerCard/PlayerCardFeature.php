@@ -5,10 +5,12 @@ namespace Modules\SpatBridge\Features\PlayerCard;
 use Modules\SpatBridge\Features\Feature;
 use Modules\SpatBridge\Features\Panel;
 use Modules\SpatBridge\Features\PanelRow;
+use Modules\SpatBridge\Features\RowAction;
 
 /**
- * Read-only player card: one row per player on the customer's email, plus
- * registration rows that need an agent's attention and a short history.
+ * Player card: one row per player on the customer's email, plus registration
+ * rows that need an agent's attention and a short history. The first player
+ * row offers Change email; each attention row offers Re-run registration.
  *
  * Wire data comes from another system, so every key may be missing and every
  * value may have the wrong type; nothing here throws on that.
@@ -16,6 +18,8 @@ use Modules\SpatBridge\Features\PanelRow;
 final class PlayerCardFeature implements Feature
 {
     private const SEP = ' · ';
+    private const EMAIL_FORM_VIEW = 'spatbridge::action.change_email_form';
+    private const ERROR_VIEW = 'spatbridge::action.error';
 
     public function key(): string
     {
@@ -37,6 +41,7 @@ final class PlayerCardFeature implements Feature
         $playerSection = $this->arr($sections, 'player');
         $registration = $this->arr($sections, 'registration');
         $season = $this->str($playerSection, 'current_season');
+        $email = $this->str($playerSection, 'email');
 
         $rows = [];
         $summaries = [];
@@ -47,7 +52,7 @@ final class PlayerCardFeature implements Feature
                 continue;
             }
             $current = $this->currentAssignment($player);
-            $rows[] = $this->playerRow($player, $current, $season);
+            $rows[] = $this->playerRow($player, $current, $season, $rows === [] ? $email : '');
             $summaries[] = $this->playerSummary($player, $current);
             if ($current === null) {
                 $attention = true;
@@ -88,7 +93,7 @@ final class PlayerCardFeature implements Feature
 
     public function actionKeys(): array
     {
-        return [];
+        return ['change_email', 'rerun'];
     }
 
     public function queryKeys(): array
@@ -98,7 +103,30 @@ final class PlayerCardFeature implements Feature
 
     public function previewOverride(string $action, array $params): ?array
     {
+        if ($action !== 'change_email') {
+            return null;
+        }
+
+        $old = $this->str($params, 'old_email');
+        if (!array_key_exists('new_email', $params)) {
+            return ['view' => self::EMAIL_FORM_VIEW, 'data' => ['oldEmail' => $old]];
+        }
+
+        // Checked here so a bad address never costs a WordPress call.
+        $new = $params['new_email'];
+        if (!is_string($new) || filter_var($new, FILTER_VALIDATE_EMAIL) === false) {
+            return $this->emailError(__('Enter a valid new email address.'));
+        }
+        if (strcasecmp($new, $old) === 0) {
+            return $this->emailError(__('The new email address is the same as the current one.'));
+        }
+
         return null;
+    }
+
+    private function emailError(string $message): array
+    {
+        return ['view' => self::ERROR_VIEW, 'data' => ['message' => $message]];
     }
 
     public function mapConfirmCodes(string $action, array $codes, array $params): array
@@ -106,7 +134,7 @@ final class PlayerCardFeature implements Feature
         return $params;
     }
 
-    private function playerRow(array $player, ?array $current, string $season): PanelRow
+    private function playerRow(array $player, ?array $current, string $season, string $email): PanelRow
     {
         $title = $this->playerTitle($player);
         if ($current !== null && !empty($current['captain'])) {
@@ -149,7 +177,12 @@ final class PlayerCardFeature implements Feature
             $lines[] = $game;
         }
 
-        return new PanelRow($title, array_values(array_filter($lines, 'strlen')));
+        $actions = [];
+        if ($email !== '') {
+            $actions[] = new RowAction($this->key(), 'change_email', __('Change email…'), ['old_email' => $email]);
+        }
+
+        return new PanelRow($title, array_values(array_filter($lines, 'strlen')), null, 'muted', $actions);
     }
 
     private function playerTitle(array $player): string
@@ -210,8 +243,22 @@ final class PlayerCardFeature implements Feature
             $this->orderLabel($item) . self::SEP . __('registration not completed'),
             $lines,
             __('Check'),
-            'bad'
+            'bad',
+            $this->rerunActions($item)
         );
+    }
+
+    /**
+     * @return RowAction[]
+     */
+    private function rerunActions(array $item): array
+    {
+        $id = $item['order_id'] ?? null;
+        $id = is_int($id) ? $id : (is_string($id) && ctype_digit($id) ? (int) $id : 0);
+
+        return $id > 0
+            ? [new RowAction($this->key(), 'rerun', __('Re-run registration'), ['order_id' => $id])]
+            : [];
     }
 
     /**

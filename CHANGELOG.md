@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Player card actions: Change email… on the first player row (previews every
+  record that will change) and Re-run registration on each "registration not
+  completed" row.
 - Waitlist panel for the customer's SportsPress waitlist entries, with Offer,
   Re-offer, Withdraw offer and Remove from waitlist actions (replaces the
   separate SplmWaitlist module).

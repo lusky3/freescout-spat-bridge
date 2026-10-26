@@ -181,12 +181,130 @@ class PlayerCardFeatureTest extends TestCase
         $this->assertNull($feature->present(['player' => 'x', 'registration' => 7]));
     }
 
-    public function test_has_no_actions_yet(): void
+    private function withEmail(array $players, ?array $registration, string $email): array
+    {
+        $sections = $this->sections($players, $registration);
+        $sections['player']['email'] = $email;
+
+        return $sections;
+    }
+
+    private function actionsOf($row): array
+    {
+        return array_map(function ($action) {
+            return [$action->feature(), $action->action(), $action->label(), $action->params()];
+        }, $row->actions());
+    }
+
+    public function test_action_keys(): void
+    {
+        $this->assertSame(['change_email', 'rerun'], (new PlayerCardFeature())->actionKeys());
+    }
+
+    public function test_the_first_player_row_offers_change_email_with_the_matched_email(): void
+    {
+        $panel = (new PlayerCardFeature())->present(
+            $this->withEmail([$this->player(), $this->player(['name' => 'Second'])], null, 'jordan@example.com')
+        );
+
+        $this->assertSame(
+            [['player', 'change_email', 'Change email…', ['old_email' => 'jordan@example.com']]],
+            $this->actionsOf($panel->rows()[0])
+        );
+        $this->assertSame([], $panel->rows()[1]->actions());
+    }
+
+    public function test_no_change_email_without_an_email(): void
     {
         $feature = new PlayerCardFeature();
 
-        $this->assertSame([], $feature->actionKeys());
-        $this->assertNull($feature->previewOverride('any', ['a' => 1]));
-        $this->assertSame(['a' => 1], $feature->mapConfirmCodes('any', ['code'], ['a' => 1]));
+        foreach ([null, '', '  ', ['x']] as $email) {
+            $sections = $this->sections([$this->player()], null);
+            if ($email !== null) {
+                $sections['player']['email'] = $email;
+            }
+            $actions = $this->actionsOf($feature->present($sections)->rows()[0]);
+            $this->assertSame([], $actions);
+        }
+    }
+
+    public function test_each_attention_row_offers_rerun_with_its_order_id(): void
+    {
+        $panel = (new PlayerCardFeature())->present($this->sections([], [
+            'attention' => [
+                ['order_id' => 5107, 'last_action' => 'name_rejected'],
+                ['order_id' => '5108', 'last_action' => 'failed'],
+            ],
+        ]));
+
+        $this->assertSame(
+            [['player', 'rerun', 'Re-run registration', ['order_id' => 5107]]],
+            $this->actionsOf($panel->rows()[0])
+        );
+        $this->assertSame(
+            [['player', 'rerun', 'Re-run registration', ['order_id' => 5108]]],
+            $this->actionsOf($panel->rows()[1])
+        );
+    }
+
+    public function test_an_attention_row_without_an_order_id_has_no_rerun(): void
+    {
+        $panel = (new PlayerCardFeature())->present($this->sections([], [
+            'attention' => [['last_action' => 'failed'], ['order_id' => 0], ['order_id' => 'abc'], ['order_id' => -4]],
+        ]));
+
+        foreach ($panel->rows() as $row) {
+            $this->assertSame([], $row->actions());
+        }
+    }
+
+    public function test_history_rows_have_no_actions(): void
+    {
+        $panel = (new PlayerCardFeature())->present($this->sections([], $this->registration()));
+
+        $this->assertSame([], $panel->rows()[count($panel->rows()) - 1]->actions());
+    }
+
+    public function test_change_email_without_a_new_email_shows_the_form(): void
+    {
+        $override = (new PlayerCardFeature())->previewOverride('change_email', ['old_email' => 'a@example.com']);
+
+        $this->assertSame('spatbridge::action.change_email_form', $override['view']);
+        $this->assertSame('a@example.com', $override['data']['oldEmail']);
+    }
+
+    public function test_change_email_with_a_valid_new_email_goes_to_the_dry_run(): void
+    {
+        $this->assertNull((new PlayerCardFeature())->previewOverride(
+            'change_email',
+            ['old_email' => 'a@example.com', 'new_email' => 'b@example.com']
+        ));
+    }
+
+    public function test_change_email_validates_the_new_email_before_any_wordpress_call(): void
+    {
+        $feature = new PlayerCardFeature();
+
+        foreach (['not an email', 'a@', '  ', 'A@Example.com', ' a@example.com '] as $new) {
+            $params = ['old_email' => 'a@example.com', 'new_email' => $new];
+            $override = $feature->previewOverride('change_email', $params);
+            $this->assertSame('spatbridge::action.error', $override['view'], var_export($new, true));
+            $this->assertNotSame('', $override['data']['message']);
+        }
+        $override = $feature->previewOverride('change_email', ['old_email' => 'a@example.com', 'new_email' => ['x']]);
+        $this->assertSame('spatbridge::action.error', $override['view']);
+    }
+
+    public function test_rerun_has_no_form(): void
+    {
+        $feature = new PlayerCardFeature();
+
+        $this->assertNull($feature->previewOverride('rerun', ['order_id' => 5107]));
+        $this->assertNull($feature->previewOverride('other', []));
+    }
+
+    public function test_confirm_codes_change_nothing(): void
+    {
+        $this->assertSame(['a' => 1], (new PlayerCardFeature())->mapConfirmCodes('change_email', ['code'], ['a' => 1]));
     }
 }

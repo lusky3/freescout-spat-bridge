@@ -242,6 +242,64 @@
     }
 
     /**
+     * The form shown before a change of email is previewed. Preview requests
+     * the dry run again with the new address added.
+     */
+    function initEmailForm(root, form) {
+        if (form.getAttribute('data-bound') === '1' || !window.jQuery) {
+            return;
+        }
+        form.setAttribute('data-bound', '1');
+
+        var input = form.querySelector('.spatbridge-new-email');
+        var button = form.querySelector('.spatbridge-email-preview');
+        var errorBox = form.querySelector('.spatbridge-email-error');
+
+        function showError(problem) {
+            if (errorBox) {
+                errorBox.textContent = problem;
+                errorBox.hidden = problem === '';
+            }
+        }
+
+        if (!button || !input) {
+            return;
+        }
+
+        function submit(event) {
+            event.preventDefault();
+            if (button.disabled) {
+                return;
+            }
+            var address = input.value.trim();
+            if (address === '' || !input.checkValidity()) {
+                showError('Enter a valid new email address.');
+                return;
+            }
+            var params = {};
+            try {
+                params = JSON.parse(form.getAttribute('data-params') || '{}') || {};
+            } catch (e) {
+                params = {};
+            }
+            params.new_email = address;
+            button.disabled = true;
+            showError('');
+            loadPreview(root, form, params, function (failure) {
+                button.disabled = false;
+                showError(failure);
+            });
+        }
+
+        button.addEventListener('click', submit);
+        input.addEventListener('keydown', function (event) {
+            if (event.key === 'Enter') {
+                submit(event);
+            }
+        });
+    }
+
+    /**
      * Called by FreeScout once the preview partial is in the pop-up.
      * Confirm stays disabled until every confirmation is ticked and while a
      * run is in flight; the idempotency key makes a repeated run harmless.
@@ -256,6 +314,11 @@
         var offerForm = root ? root.querySelector('.spatbridge-offer-form') : null;
         if (offerForm) {
             initOfferForm(root, offerForm);
+            return;
+        }
+        var emailForm = root ? root.querySelector('.spatbridge-email-form') : null;
+        if (emailForm) {
+            initEmailForm(root, emailForm);
             return;
         }
         var box = root ? root.querySelector('.spatbridge-action-preview') : null;
