@@ -461,6 +461,19 @@ class SpatBridgeSettingsControllerTest extends TestCase
         $this->assertSame(str_repeat('a', 100), $store->get('spatbridge.events.etransfer.unmatched.tag'));
     }
 
+    public function test_a_forged_create_switch_for_a_resolution_event_is_ignored(): void
+    {
+        $store = $this->store();
+
+        $this->controller($store)->save($this->request([
+            'event_create' => ['etransfer_matched' => '1', 'waitlist_claimed' => '1'],
+        ]));
+
+        $this->assertFalse($store->get('spatbridge.events.etransfer.matched.create'));
+        $this->assertFalse($store->get('spatbridge.events.waitlist.claimed.create'));
+        $this->assertSame(0, $store->get('spatbridge.events.mailbox_id'));
+    }
+
     public function test_unknown_event_types_are_ignored(): void
     {
         $store = $this->store();

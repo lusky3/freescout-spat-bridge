@@ -222,6 +222,15 @@ class EventCatalogTest extends TestCase
         $this->assertSame('mystery.type', $this->catalog->label('mystery.type'));
     }
 
+    public function test_only_non_resolution_types_can_create_tickets(): void
+    {
+        foreach ($this->catalog->types() as $type) {
+            $resolution = in_array($type, ['etransfer.matched', 'waitlist.claimed'], true);
+            $this->assertSame(!$resolution, $this->catalog->canCreate($type), $type);
+        }
+        $this->assertFalse($this->catalog->canCreate('mystery.type'));
+    }
+
     public function test_every_outcome_has_a_human_label(): void
     {
         $outcomes = [

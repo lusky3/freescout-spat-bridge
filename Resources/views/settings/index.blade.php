@@ -174,13 +174,13 @@
         <div class="col-sm-6">
             <div class="checkbox">
                 <label>
-                    <input type="checkbox" name="events_notes" value="1" {{ $events['notes'] ? 'checked' : '' }}>
+                    <input type="checkbox" name="events_notes" value="1" {{ (count($errors) > 0 ? old('events_notes') !== null : $events['notes']) ? 'checked' : '' }}>
                     {{ __('Add an internal note') }}
                 </label>
             </div>
             <div class="checkbox">
                 <label>
-                    <input type="checkbox" name="events_tags" value="1" {{ $events['tags'] ? 'checked' : '' }}>
+                    <input type="checkbox" name="events_tags" value="1" {{ (count($errors) > 0 ? old('events_tags') !== null : $events['tags']) ? 'checked' : '' }}>
                     {{ __('Apply a tag') }}
                 </label>
             </div>
@@ -211,9 +211,13 @@
                         @endif
                     </td>
                     <td>
-                        <input type="checkbox" name="event_create[{{ $type['key'] }}]" value="1"
-                               aria-label="{{ __('Create a ticket for :event when there is no open ticket', ['event' => $type['label']]) }}"
-                               {{ $type['create'] ? 'checked' : '' }}>
+                        @if ($type['canCreate'])
+                            <input type="checkbox" name="event_create[{{ $type['key'] }}]" value="1"
+                                   aria-label="{{ __('Create a ticket for :event when there is no open ticket', ['event' => $type['label']]) }}"
+                                   {{ (count($errors) > 0 ? old('event_create.' . $type['key']) !== null : $type['create']) ? 'checked' : '' }}>
+                        @else
+                            <span class="text-muted" title="{{ __('Resolves an earlier event, so it never opens a ticket.') }}">&mdash;</span>
+                        @endif
                     </td>
                 </tr>
             @endforeach
@@ -259,7 +263,9 @@
         <label class="col-sm-3 control-label">{{ __('Last event received') }}</label>
         <div class="col-sm-6">
             <p class="form-control-static">
-                @if ($events['lastEvent'])
+                @if ($events['tableMissing'])
+                    <span class="text-warning">{{ __('Events table missing — run `php artisan migrate` (or reinstall the module).') }}</span>
+                @elseif ($events['lastEvent'])
                     {{ $events['lastEvent']['time'] }}
                     <span class="text-muted">&middot; {{ $events['lastEvent']['type'] }} &middot; {{ $events['lastEvent']['email'] }} &middot; {{ $events['lastEvent']['outcome'] }}</span>
                 @else
@@ -280,6 +286,13 @@
 {{-- FreeScout's CSP allows inline scripts only with its nonce, and no inline on*= handlers at all. --}}
 <script {!! \Helper::cspNonceAttr() !!}>
     (function () {
+        var T = {!! json_encode([
+            'copied' => __('Copied'),
+            'copy' => __('Press Ctrl+C to copy.'),
+            'inactive' => __('not active in WordPress'),
+            'testing' => __('Testing...'),
+            'failed' => __('The test request failed.'),
+        ], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) !!};
         var btn = document.getElementById('spatbridge-test');
         var out = document.getElementById('spatbridge-test-result');
         var secret = document.getElementById('spatbridge_shared_secret');
@@ -292,15 +305,15 @@
         var copyOut = document.getElementById('spatbridge-copy-result');
         copyBtn.addEventListener('click', function () {
             var field = document.getElementById('spatbridge_events_url');
-            var done = function () { copyOut.textContent = '✓ {{ __('Copied') }}'; };
+            var done = function () { copyOut.textContent = '✓ ' + T.copied; };
             field.focus();
             field.select();
             if (navigator.clipboard && navigator.clipboard.writeText) {
                 navigator.clipboard.writeText(field.value).then(done, function () {
-                    copyOut.textContent = '{{ __('Press Ctrl+C to copy.') }}';
+                    copyOut.textContent = T.copy;
                 });
             } else {
-                try { document.execCommand('copy'); done(); } catch (e) { copyOut.textContent = '{{ __('Press Ctrl+C to copy.') }}'; }
+                try { document.execCommand('copy'); done(); } catch (e) { copyOut.textContent = T.copy; }
             }
         });
 
@@ -311,14 +324,14 @@
                 var cell = row.querySelector('.spatbridge-wp-side');
                 var ok = needed.every(function (key) { return providers.indexOf(key) !== -1; });
                 cell.className = 'spatbridge-wp-side ' + (ok ? 'text-success' : 'text-warning');
-                cell.textContent = ok ? '✓ ' + needed.join(', ') : '⚠ {{ __('not active in WordPress') }}';
+                cell.textContent = ok ? '✓ ' + needed.join(', ') : '⚠ ' + T.inactive;
             });
         }
 
         btn.addEventListener('click', function () {
             btn.disabled = true;
             out.className = 'text-muted';
-            out.textContent = '{{ __('Testing...') }}';
+            out.textContent = T.testing;
             fetch(btn.getAttribute('data-url'), {
                 method: 'POST',
                 credentials: 'same-origin',
@@ -333,7 +346,7 @@
                 if (res.ok) { paintWpSide(res.providers || []); }
             }).catch(function () {
                 out.className = 'text-danger';
-                out.textContent = '✗ {{ __('The test request failed.') }}';
+                out.textContent = '✗ ' + T.failed;
             }).then(function () { btn.disabled = false; });
         });
 

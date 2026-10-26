@@ -87,6 +87,31 @@ class EventSettingsTest extends TestCase
         $this->assertFalse($this->settings(false)->build()['tagsAvailable']);
     }
 
+    public function test_a_missing_events_table_does_not_break_the_page_data(): void
+    {
+        $this->store->latestFails = new \RuntimeException('no such table: spatbridge_events');
+
+        $model = $this->settings()->build();
+
+        $this->assertNull($model['lastEvent']);
+        $this->assertTrue($model['tableMissing']);
+        $this->assertCount(7, $model['types']);
+    }
+
+    public function test_resolution_events_cannot_create_and_read_back_as_off(): void
+    {
+        $this->options->set('spatbridge.events.etransfer.matched.create', true);
+
+        $model = $this->settings()->build();
+
+        foreach (['etransfer.matched', 'waitlist.claimed'] as $type) {
+            $this->assertFalse($this->type($model, $type)['canCreate']);
+            $this->assertFalse($this->type($model, $type)['create']);
+        }
+        $this->assertTrue($this->type($model, 'registration.reversed')['canCreate']);
+        $this->assertFalse($model['tableMissing']);
+    }
+
     public function test_last_event_is_null_until_one_arrives_then_the_newest(): void
     {
         $this->assertNull($this->settings()->build()['lastEvent']);

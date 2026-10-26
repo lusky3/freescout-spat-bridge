@@ -43,8 +43,10 @@ class EventSettings
 
     /**
      * @return array{
-     *     notes: bool, tags: bool, mailboxId: int, noteUserId: int, tagsAvailable: bool,
-     *     types: array<int, array{type: string, key: string, label: string, tag: string, create: bool}>,
+     *     notes: bool, tags: bool, mailboxId: int, noteUserId: int, tagsAvailable: bool, tableMissing: bool,
+     *     types: array<int, array{
+     *         type: string, key: string, label: string, tag: string, canCreate: bool, create: bool
+     *     }>,
      *     lastEvent: array{time: string, type: string, email: string, outcome: string}|null
      * }
      */
@@ -57,9 +59,14 @@ class EventSettings
                 'key' => self::fieldKey($type),
                 'label' => $this->catalog->label($type),
                 'tag' => $this->tag($type),
-                'create' => OptionBool::from($this->options->get('spatbridge.events.' . $type . '.create'), false),
+                'canCreate' => $this->catalog->canCreate($type),
+                'create' => $this->catalog->canCreate($type)
+                    && OptionBool::from($this->options->get('spatbridge.events.' . $type . '.create'), false),
             ];
         }
+
+        $tableMissing = false;
+        $lastEvent = $this->lastEvent($tableMissing);
 
         return [
             'notes' => OptionBool::from($this->options->get('spatbridge.events.notes'), true),
@@ -68,7 +75,8 @@ class EventSettings
             'noteUserId' => (int) $this->options->get('spatbridge.events.note_user_id', 0),
             'tagsAvailable' => $this->tags->available(),
             'types' => $types,
-            'lastEvent' => $this->lastEvent(),
+            'lastEvent' => $lastEvent,
+            'tableMissing' => $tableMissing,
         ];
     }
 
@@ -87,9 +95,16 @@ class EventSettings
     /**
      * @return array{time: string, type: string, email: string, outcome: string}|null
      */
-    private function lastEvent(): ?array
+    private function lastEvent(bool &$tableMissing): ?array
     {
-        $rows = $this->store->latest(1);
+        try {
+            $rows = $this->store->latest(1);
+        } catch (\Throwable $e) {
+            // Typically an upgraded install that hasn't run the migration.
+            $tableMissing = true;
+
+            return null;
+        }
         if ($rows === []) {
             return null;
         }

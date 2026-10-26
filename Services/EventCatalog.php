@@ -82,6 +82,15 @@ final class EventCatalog
     }
 
     /**
+     * Resolution events (a transfer matched, a waitlist offer claimed) only
+     * annotate existing tickets; they never open one.
+     */
+    public function canCreate(string $type): bool
+    {
+        return $this->has($type) && !in_array($type, ['etransfer.matched', 'waitlist.claimed'], true);
+    }
+
+    /**
      * The name shown to admins for a type; an unknown type shows as itself.
      */
     public function label(string $type): string

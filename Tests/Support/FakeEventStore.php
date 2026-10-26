@@ -53,6 +53,9 @@ class FakeEventStore implements EventStoreInterface
         return $this->routed;
     }
 
+    /** @var \Throwable|null Thrown by latest(), like a missing table. */
+    public $latestFails;
+
     /** @var int[] The limits latest() was called with. */
     public $latestLimits = [];
 
@@ -61,6 +64,9 @@ class FakeEventStore implements EventStoreInterface
 
     public function latest(int $limit): array
     {
+        if ($this->latestFails !== null) {
+            throw $this->latestFails;
+        }
         $this->latestLimits[] = $limit;
         $rows = $this->log;
         krsort($rows);

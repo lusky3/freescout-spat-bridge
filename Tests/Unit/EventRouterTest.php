@@ -372,6 +372,18 @@ class EventRouterTest extends TestCase
         $this->assertSame('ignored', $this->router()->route($this->event())['outcome']);
     }
 
+    public function test_resolution_events_never_create_a_ticket_even_with_a_stale_option(): void
+    {
+        $this->options->set('spatbridge.events.etransfer.matched.create', true);
+        $this->options->set('spatbridge.events.waitlist.claimed.create', true);
+        $this->options->set('spatbridge.events.mailbox_id', 3);
+        $router = $this->router();
+
+        $this->assertSame('ignored', $router->route($this->event('etransfer.matched'))['outcome']);
+        $this->assertSame('ignored', $router->route($this->event('waitlist.claimed'))['outcome']);
+        $this->assertSame([], $this->created);
+    }
+
     public function test_configured_note_user_falls_back_to_the_first_active_admin(): void
     {
         $this->options->set('spatbridge.events.note_user_id', 7);

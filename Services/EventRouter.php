@@ -87,7 +87,10 @@ class EventRouter
             return $this->noteAll($event, $conversations);
         }
 
-        if (!$this->bool('spatbridge.events.' . $event['type'] . '.create', false)) {
+        if (
+            !$this->catalog->canCreate($event['type'])
+            || !$this->bool('spatbridge.events.' . $event['type'] . '.create', false)
+        ) {
             return self::result(self::IGNORED);
         }
 

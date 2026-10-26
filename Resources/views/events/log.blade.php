@@ -10,13 +10,15 @@
         <a href="{{ route('settings', ['section' => 'spatbridge']) }}">{{ __('Back to settings') }}</a>
     </p>
 
-    @if (count($events) === 0)
+    @if ($tableMissing)
+        <p class="alert alert-warning">{{ __('Events table missing — run `php artisan migrate` (or reinstall the module).') }}</p>
+    @elseif (count($events) === 0)
         <p class="alert alert-info">{{ __('No events received yet.') }}</p>
     @else
         <table class="table table-condensed table-striped">
             <thead>
                 <tr>
-                    <th>{{ __('Time') }}</th>
+                    <th>{{ __('Time (server)') }}</th>
                     <th>{{ __('Event') }}</th>
                     <th>{{ __('Email') }}</th>
                     <th>{{ __('Outcome') }}</th>

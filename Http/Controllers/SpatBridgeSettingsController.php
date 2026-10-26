@@ -133,7 +133,7 @@ class SpatBridgeSettingsController extends Controller
         $switches = (array) $request->input('event_create', []);
         $types = [];
         foreach ($this->catalog->types() as $type) {
-            if (isset($switches[EventSettings::fieldKey($type)])) {
+            if ($this->catalog->canCreate($type) && isset($switches[EventSettings::fieldKey($type)])) {
                 $types[] = $type;
             }
         }

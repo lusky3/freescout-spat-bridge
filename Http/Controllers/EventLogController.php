@@ -26,7 +26,22 @@ class EventLogController extends Controller
 
     public function index()
     {
-        return view('spatbridge::events.log', ['events' => $this->rows()]);
+        return view('spatbridge::events.log', $this->data());
+    }
+
+    /**
+     * The page's data. A failing query (typically a missing table on an
+     * install that hasn't migrated) becomes a notice, not a 500.
+     *
+     * @return array{events: array, tableMissing: bool}
+     */
+    public function data(): array
+    {
+        try {
+            return ['events' => $this->rows(), 'tableMissing' => false];
+        } catch (\Throwable $e) {
+            return ['events' => [], 'tableMissing' => true];
+        }
     }
 
     /**

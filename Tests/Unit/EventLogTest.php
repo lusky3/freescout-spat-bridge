@@ -72,6 +72,23 @@ class EventLogTest extends TestCase
         $this->assertSame([], $rows[1]['conversationIds']);
     }
 
+    public function test_a_failing_store_gives_a_notice_instead_of_an_error(): void
+    {
+        $store = new FakeEventStore();
+        $store->latestFails = new \RuntimeException('no such table');
+
+        $data = (new EventLogController($store))->data();
+
+        $this->assertSame(['events' => [], 'tableMissing' => true], $data);
+    }
+
+    public function test_a_working_store_is_not_flagged(): void
+    {
+        $data = (new EventLogController(new FakeEventStore()))->data();
+
+        $this->assertFalse($data['tableMissing']);
+    }
+
     public function test_the_log_view_escapes_everything_and_links_tickets(): void
     {
         $source = (string) file_get_contents(dirname(__DIR__, 2) . '/Resources/views/events/log.blade.php');
