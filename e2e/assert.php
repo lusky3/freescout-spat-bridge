@@ -22,8 +22,10 @@
 
 use Illuminate\Http\Request;
 use Modules\SpatBridge\Http\Controllers\ActionController;
+use Modules\SpatBridge\Services\ActionPermissions;
 use Modules\SpatBridge\Services\ConnectionMessage;
 use Modules\SpatBridge\Services\SpatClient;
+use Modules\SpatBridge\Services\Support\OptionStoreInterface;
 
 $spatbridgeE2e = new class {
     // Mixed case on purpose: WordPress stores the lower-case address, and
@@ -345,7 +347,18 @@ $spatbridgeE2e = new class {
         $nocap = $this->agent(self::NOCAP_EMAIL, $mailbox);
         $params = ['log_id' => $this->fixtureId('mismatch_log_id'), 'order_id' => $this->fixtureId('on_hold_order_id')];
 
+        // "admins" is also the default, so first let nocap in and check the
+        // stored mode is honoured; the refusal below then comes from the
+        // explicit "admins" setting, not from the fallback.
+        $permissions = new ActionPermissions(app(OptionStoreInterface::class));
+        $this->setOption(self::ACTORS_OPTION, (string) json_encode(['mode' => 'selected', 'user_ids' => [(int) $nocap->id]]));
+        if (!$permissions->allows($nocap, 'etransfers')) {
+            return 'the stored "selected" mode does not let nocap in';
+        }
         $this->setOption(self::ACTORS_OPTION, (string) json_encode(['mode' => 'admins', 'user_ids' => []]));
+        if ($permissions->mode('etransfers') !== 'admins' || $permissions->allows($nocap, 'etransfers')) {
+            return 'the stored "admins" mode is not read back';
+        }
 
         // A forged Run: nocap never saw a preview, and FreeScout must refuse
         // before anything reaches WordPress.
