@@ -40,7 +40,10 @@ class PickAndTabsMarkupTest extends TestCase
     {
         $view = $this->source('Resources/views/sidebar/tabbed.blade.php');
 
-        $this->assertMatchesRegularExpression('/<a [^>]*class="spatbridge-tab"[^>]*style="[^"]*white-space:\s*nowrap/', $view);
+        $this->assertMatchesRegularExpression(
+            '/<a [^>]*class="spatbridge-tab"[^>]*style="[^"]*white-space:\s*nowrap/',
+            $view
+        );
     }
 
     public function test_the_missing_table_hint_points_at_module_install_not_plain_migrate(): void

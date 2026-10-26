@@ -166,7 +166,9 @@ class PlayerCardFeatureTest extends TestCase
             return new \DateTimeZone('UTC');
         });
 
-        $player = $this->player(['next_game' => ['start' => '2025-10-30T21:45:00-04:00', 'opponent' => 'Otters', 'venue' => 'Rink 2']]);
+        $player = $this->player(['next_game' => [
+            'start' => '2025-10-30T21:45:00-04:00', 'opponent' => 'Otters', 'venue' => 'Rink 2',
+        ]]);
         $panel = $feature->present($this->sections([$player]));
 
         $this->assertContains('Next game Fri Oct 31, 1:45 AM vs Otters · Rink 2', $panel->rows()[0]->lines());
