@@ -16,3 +16,14 @@ Route::group([
         'uses' => 'SpatBridgeSettingsController@test',
     ])->name('spatbridge_test_connection');
 });
+
+Route::group([
+    // Agent routes: any signed-in user; the controller checks permissions.
+    'middleware' => ['web', 'auth'],
+    'prefix' => \Helper::getSubdirectory(),
+    'namespace' => 'Modules\\SpatBridge\\Http\\Controllers',
+], function () {
+    Route::get('/spatbridge/action/preview', [
+        'uses' => 'ActionController@preview',
+    ])->name('spatbridge.action.preview');
+});

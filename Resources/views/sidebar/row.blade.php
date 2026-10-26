@@ -10,4 +10,13 @@
     @foreach ($row->lines() as $line)
         <div><small class="text-help">{{ $line }}</small></div>
     @endforeach
+    @if ($row->actions() !== [])
+        <div class="spatbridge-actions">
+            @foreach ($row->actions() as $action)
+                <a href="{{ route('spatbridge.action.preview') }}?{{ $action->query() }}&conversation_id={{ $conversationId ?? 0 }}"
+                   data-trigger="modal" data-modal-title="{{ $action->label() }}" data-modal-no-footer="true"
+                   data-modal-on-show="spatbridgeActionInit" class="spatbridge-action"><small>{{ $action->label() }}</small></a>
+            @endforeach
+        </div>
+    @endif
 </li>

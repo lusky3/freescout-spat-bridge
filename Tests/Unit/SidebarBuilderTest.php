@@ -5,10 +5,13 @@ namespace Tests\Unit;
 use Modules\SpatBridge\Features\Feature;
 use Modules\SpatBridge\Features\Panel;
 use Modules\SpatBridge\Features\PanelRow;
+use Modules\SpatBridge\Features\RowAction;
+use Modules\SpatBridge\Services\ActionPermissions;
 use Modules\SpatBridge\Services\ClientResult;
 use Modules\SpatBridge\Services\SidebarBuilder;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\AbstractLogger;
+use Tests\Support\FakeOptionStore;
 
 class SidebarBuilderTest extends TestCase
 {
@@ -209,5 +212,100 @@ class SidebarBuilderTest extends TestCase
         ]);
 
         $this->assertSame([$panel], $vm['panels']);
+    }
+
+    private function user(int $id, bool $admin)
+    {
+        return new class ($id, $admin) {
+            public $id;
+            private $admin;
+
+            public function __construct(int $id, bool $admin)
+            {
+                $this->id = $id;
+                $this->admin = $admin;
+            }
+
+            public function isAdmin(): bool
+            {
+                return $this->admin;
+            }
+        };
+    }
+
+    private function actionPanel(): Panel
+    {
+        $action = new RowAction('etransfers', 'match', 'Match to order…', ['log_id' => 1]);
+
+        return new Panel('etransfers', 'e-Transfers', [
+            new PanelRow('Row A', ['line'], 'Unmatched', 'warn', [$action]),
+            new PanelRow('Row B', ['line']),
+        ], 'summary', true);
+    }
+
+    private function permissions(string $mode): ActionPermissions
+    {
+        $store = new FakeOptionStore();
+        $store->set('spatbridge.features.etransfers.actors', json_encode(['mode' => $mode, 'user_ids' => []]));
+
+        return new ActionPermissions($store);
+    }
+
+    public function test_actions_are_stripped_for_a_user_who_may_not_run_them(): void
+    {
+        $builder = new SidebarBuilder($this->logger(), $this->permissions('admins'));
+        $vm = $builder->build(
+            $this->ok(),
+            [$this->feature('etransfers', $this->actionPanel())],
+            $this->user(5, false)
+        );
+
+        $panel = $vm['panels'][0];
+        $this->assertSame([], $panel->rows()[0]->actions());
+        $this->assertSame('Row A', $panel->rows()[0]->title());
+        $this->assertSame(['line'], $panel->rows()[0]->lines());
+        $this->assertSame('Unmatched', $panel->rows()[0]->badge());
+        $this->assertSame('warn', $panel->rows()[0]->tone());
+        $this->assertSame('summary', $panel->summary());
+        $this->assertTrue($panel->attention());
+    }
+
+    public function test_actions_are_kept_for_an_allowed_user(): void
+    {
+        $builder = new SidebarBuilder($this->logger(), $this->permissions('admins'));
+        $vm = $builder->build(
+            $this->ok(),
+            [$this->feature('etransfers', $this->actionPanel())],
+            $this->user(1, true)
+        );
+
+        $this->assertCount(1, $vm['panels'][0]->rows()[0]->actions());
+        $this->assertSame('match', $vm['panels'][0]->rows()[0]->actions()[0]->action());
+
+        $vm = (new SidebarBuilder($this->logger(), $this->permissions('users')))->build(
+            $this->ok(),
+            [$this->feature('etransfers', $this->actionPanel())],
+            $this->user(5, false)
+        );
+        $this->assertCount(1, $vm['panels'][0]->rows()[0]->actions());
+    }
+
+    public function test_actions_are_untouched_when_no_user_is_given(): void
+    {
+        $builder = new SidebarBuilder($this->logger(), $this->permissions('admins'));
+        $vm = $builder->build($this->ok(), [$this->feature('etransfers', $this->actionPanel())]);
+
+        $this->assertCount(1, $vm['panels'][0]->rows()[0]->actions());
+    }
+
+    public function test_actions_are_stripped_when_a_user_is_given_but_no_permissions_exist(): void
+    {
+        $vm = (new SidebarBuilder($this->logger()))->build(
+            $this->ok(),
+            [$this->feature('etransfers', $this->actionPanel())],
+            $this->user(1, true)
+        );
+
+        $this->assertSame([], $vm['panels'][0]->rows()[0]->actions());
     }
 }

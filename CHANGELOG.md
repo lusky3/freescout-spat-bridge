@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   PHPUnit/PHPCS harness, CI workflows and the Docker dev environment.
 - Feature contract, `Panel`/`PanelRow` model and `FeatureRegistry` with
   per-feature switches and ordering.
+- Row actions on sidebar panels, with a per-module "Who can run actions"
+  setting (Admins / Admins + Users / Selected people).
 - Settings page (Connection, Modules, Sidebar) with a Test connection button.
 - Conversation sidebar with stacked and tabbed layouts, a per-agent layout
   switch and a "League info unavailable" state.

@@ -20,11 +20,20 @@ final class PanelRow
     /** @var string */
     private $tone;
 
+    /** @var RowAction[] */
+    private $actions;
+
     /**
      * @param string[] $lines
+     * @param RowAction[] $actions
      */
-    public function __construct(string $title, array $lines = [], ?string $badge = null, string $tone = 'muted')
-    {
+    public function __construct(
+        string $title,
+        array $lines = [],
+        ?string $badge = null,
+        string $tone = 'muted',
+        array $actions = []
+    ) {
         if (!in_array($tone, self::TONES, true)) {
             throw new InvalidArgumentException('Unknown panel row tone: ' . $tone);
         }
@@ -33,6 +42,15 @@ final class PanelRow
         $this->lines = $lines;
         $this->badge = $badge;
         $this->tone = $tone;
+        $this->actions = $actions;
+    }
+
+    /**
+     * @return RowAction[]
+     */
+    public function actions(): array
+    {
+        return $this->actions;
     }
 
     public function title(): string

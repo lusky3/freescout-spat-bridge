@@ -264,6 +264,53 @@ class SpatBridgeSettingsControllerTest extends TestCase
         $this->assertSame(['waitlist', 'player_card'], $store->get('spatbridge.feature_order'));
     }
 
+    public function test_actors_are_saved_as_json_per_feature(): void
+    {
+        $store = $this->store();
+
+        $this->controller($store)->save($this->request(['actors' => [
+            'player_card' => ['mode' => 'selected', 'user_ids' => ['4', '9', '4']],
+            'waitlist' => ['mode' => 'users'],
+        ]]));
+
+        $this->assertSame(
+            ['mode' => 'selected', 'user_ids' => [4, 9]],
+            json_decode($store->get('spatbridge.features.player_card.actors'), true)
+        );
+        $this->assertSame(
+            ['mode' => 'users', 'user_ids' => []],
+            json_decode($store->get('spatbridge.features.waitlist.actors'), true)
+        );
+    }
+
+    public function test_actors_for_unknown_features_are_ignored(): void
+    {
+        $store = $this->store();
+
+        $this->controller($store)->save($this->request(['actors' => ['bogus' => ['mode' => 'users']]]));
+
+        $this->assertNull($store->get('spatbridge.features.bogus.actors'));
+    }
+
+    public function test_actors_reject_an_unknown_mode_and_non_integer_ids(): void
+    {
+        $store = $this->store();
+
+        $bad = [
+            ['player_card' => ['mode' => 'everyone']],
+            ['player_card' => ['mode' => 'selected', 'user_ids' => ['abc']]],
+        ];
+        foreach ($bad as $actors) {
+            try {
+                $this->controller($store)->save($this->request(['actors' => $actors]));
+                $this->fail('Expected a ValidationException.');
+            } catch (ValidationException $e) {
+                $this->assertNotEmpty($e->validator->errors()->toArray());
+            }
+        }
+        $this->assertNull($store->get('spatbridge.features.player_card.actors'));
+    }
+
     public function test_connection_test_reports_success_with_version_and_providers(): void
     {
         $client = $this->client(ClientResult::success(200, [

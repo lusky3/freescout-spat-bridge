@@ -57,6 +57,7 @@
                 <th>{{ __('Module') }}</th>
                 <th>{{ __('Shown') }}</th>
                 <th>{{ __('WP side') }}</th>
+                <th>{{ __('Who can run actions') }}</th>
             </tr>
         </thead>
         <tbody>
@@ -69,6 +70,22 @@
                                {{ $feature['enabled'] ? 'checked' : '' }}>
                     </td>
                     <td class="spatbridge-wp-side text-muted">{{ __('Run Test connection to check') }}</td>
+                    <td>
+                        <select name="actors[{{ $feature['key'] }}][mode]" class="form-control input-sm"
+                                aria-label="{{ __('Who can run :module actions', ['module' => $feature['label']]) }}">
+                            @foreach (['admins' => __('Admins'), 'users' => __('Admins + Users'), 'selected' => __('Selected people')] as $mode => $modeLabel)
+                                <option value="{{ $mode }}" {{ $feature['actorMode'] === $mode ? 'selected' : '' }}>{{ $modeLabel }}</option>
+                            @endforeach
+                        </select>
+                        <select name="actors[{{ $feature['key'] }}][user_ids][]" class="form-control input-sm" multiple
+                                size="{{ min(max(count($users), 3), 6) }}" style="margin-top: 4px;"
+                                aria-label="{{ __('Selected people for :module', ['module' => $feature['label']]) }}">
+                            @foreach ($users as $user)
+                                <option value="{{ $user['id'] }}" {{ in_array($user['id'], $feature['actorUserIds'], true) ? 'selected' : '' }}>{{ $user['name'] }}</option>
+                            @endforeach
+                        </select>
+                        <span class="help-block">{{ __('The list is used with "Selected people". Admins can always run actions.') }}</span>
+                    </td>
                 </tr>
             @endforeach
         </tbody>

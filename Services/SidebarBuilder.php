@@ -17,16 +17,23 @@ final class SidebarBuilder
     /** @var LoggerInterface */
     private $logger;
 
-    public function __construct(LoggerInterface $logger)
+    /** @var ActionPermissions|null */
+    private $permissions;
+
+    public function __construct(LoggerInterface $logger, ?ActionPermissions $permissions = null)
     {
         $this->logger = $logger;
+        $this->permissions = $permissions;
     }
 
     /**
      * @param Feature[] $features
+     * @param object|null $user The agent viewing the page. When given, row
+     *        actions they may not run are removed; without permission rules
+     *        that means all of them.
      * @return array{state: string, panels: Panel[], summary: ?string, activeTab: ?string}
      */
-    public function build(ClientResult $result, array $features): array
+    public function build(ClientResult $result, array $features, $user = null): array
     {
         if (!$result->ok()) {
             return $this->model('unavailable', []);
@@ -43,7 +50,11 @@ final class SidebarBuilder
         $panels = [];
         foreach ($features as $feature) {
             try {
-                $panel = $this->withMissingRows($feature, $feature->present($sections), $missing);
+                $panel = $this->withMissingRows(
+                    $feature,
+                    $this->withPermittedActions($feature, $feature->present($sections), $user),
+                    $missing
+                );
             } catch (\Throwable $e) {
                 $this->logger->error('[SpatBridge] feature ' . $feature->key() . ' failed: ' . $e->getMessage());
                 continue;
@@ -54,6 +65,28 @@ final class SidebarBuilder
         }
 
         return $this->model($panels === [] ? 'empty' : 'ok', $panels);
+    }
+
+    /**
+     * @param object|null $user
+     */
+    private function withPermittedActions(Feature $feature, ?Panel $panel, $user): ?Panel
+    {
+        if ($panel === null || $user === null) {
+            return $panel;
+        }
+        if ($this->permissions !== null && $this->permissions->allows($user, $feature->key())) {
+            return $panel;
+        }
+
+        $rows = [];
+        foreach ($panel->rows() as $row) {
+            $rows[] = $row->actions() === []
+                ? $row
+                : new PanelRow($row->title(), $row->lines(), $row->badge(), $row->tone());
+        }
+
+        return new Panel($panel->key(), $panel->label(), $rows, $panel->summary(), $panel->attention());
     }
 
     /**

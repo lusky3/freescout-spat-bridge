@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Modules\SpatBridge\Features\FeatureRegistry;
+use Modules\SpatBridge\Services\ActionPermissions;
 use Modules\SpatBridge\Services\ConnectionMessage;
 use Modules\SpatBridge\Services\SpatClient;
 use Modules\SpatBridge\Services\Support\OptionStoreInterface;
@@ -40,6 +41,10 @@ class SpatBridgeSettingsController extends Controller
             'mailboxes.*' => 'integer',
             'feature_order' => 'nullable|array',
             'feature_order.*' => 'string',
+            'actors' => 'nullable|array',
+            'actors.*.mode' => 'required|in:' . implode(',', ActionPermissions::MODES),
+            'actors.*.user_ids' => 'nullable|array',
+            'actors.*.user_ids.*' => 'integer',
         ]);
 
         $this->options->set('spatbridge.wp_base_url', rtrim($validated['wp_base_url'], '/'));
@@ -57,13 +62,20 @@ class SpatBridgeSettingsController extends Controller
 
         // Unchecked checkboxes are not submitted, so absence means off.
         $switches = (array) $request->input('features', []);
+        $actors = (array) ($validated['actors'] ?? []);
         $known = [];
         foreach ($this->registry->all() as $feature) {
-            $known[] = $feature->key();
-            $this->options->set(
-                'spatbridge.features.' . $feature->key() . '.enabled',
-                isset($switches[$feature->key()])
-            );
+            $key = $feature->key();
+            $known[] = $key;
+            $this->options->set('spatbridge.features.' . $key . '.enabled', isset($switches[$key]));
+
+            if (isset($actors[$key])) {
+                $ids = array_map('intval', (array) ($actors[$key]['user_ids'] ?? []));
+                $this->options->set('spatbridge.features.' . $key . '.actors', json_encode([
+                    'mode' => $actors[$key]['mode'],
+                    'user_ids' => array_values(array_unique($ids)),
+                ]));
+            }
         }
 
         $order = array_values(array_unique(array_intersect((array) ($validated['feature_order'] ?? []), $known)));

@@ -6,6 +6,7 @@ use GuzzleHttp\Client;
 use Illuminate\Support\ServiceProvider;
 use Modules\SpatBridge\Features\FeatureRegistry;
 use Modules\SpatBridge\Features\PlayerCard\PlayerCardFeature;
+use Modules\SpatBridge\Services\ActionPermissions;
 use Modules\SpatBridge\Services\ClientResult;
 use Modules\SpatBridge\Services\SidebarBuilder;
 use Modules\SpatBridge\Services\SpatClient;
@@ -58,12 +59,16 @@ class SpatBridgeServiceProvider extends ServiceProvider
             $options = $this->app->make(OptionStoreInterface::class);
             $registry = $this->app->make(FeatureRegistry::class);
 
+            $permissions = new ActionPermissions($options);
+
             $features = [];
             foreach ($registry->all() as $feature) {
                 $features[$feature->key()] = [
                     'key' => $feature->key(),
                     'label' => $feature->label(),
                     'providerKeys' => $feature->providerKeys(),
+                    'actorMode' => $permissions->mode($feature->key()),
+                    'actorUserIds' => $permissions->selectedUserIds($feature->key()),
                     'enabled' => OptionBool::from(
                         $options->get('spatbridge.features.' . $feature->key() . '.enabled', true),
                         true
@@ -88,6 +93,19 @@ class SpatBridgeServiceProvider extends ServiceProvider
                 $mailboxes[] = ['id' => (int) $mailbox->id, 'name' => (string) $mailbox->name];
             }
 
+            $users = [];
+            if (class_exists(\App\User::class)) {
+                $activeUsers = \App\User::nonDeleted()->where('status', 1)->where('type', 1)
+                    ->get(['id', 'first_name', 'last_name', 'email']);
+                foreach ($activeUsers as $user) {
+                    $name = trim($user->first_name . ' ' . $user->last_name);
+                    $users[] = [
+                        'id' => (int) $user->id,
+                        'name' => $name === '' ? (string) $user->email : $name . ' (' . $user->email . ')',
+                    ];
+                }
+            }
+
             $selected = $options->get('spatbridge.mailboxes', []);
 
             $view->with('wpBaseUrl', (string) $options->get('spatbridge.wp_base_url', ''));
@@ -97,6 +115,7 @@ class SpatBridgeServiceProvider extends ServiceProvider
                 $options->get('spatbridge.layout_default', 'stacked') === 'tabbed' ? 'tabbed' : 'stacked'
             );
             $view->with('allowSwitch', OptionBool::from($options->get('spatbridge.allow_agent_switch', true), true));
+            $view->with('users', $users);
             $view->with('mailboxes', $mailboxes);
             $view->with('selectedMailboxes', is_array($selected) ? array_map('intval', $selected) : []);
             $view->with('features', array_values($features));
@@ -169,14 +188,22 @@ class SpatBridgeServiceProvider extends ServiceProvider
                 }
 
                 $options = $this->app->make(OptionStoreInterface::class);
-                $builder = new SidebarBuilder($this->app->make(LoggerInterface::class));
+                $builder = new SidebarBuilder(
+                    $this->app->make(LoggerInterface::class),
+                    new ActionPermissions($options)
+                );
                 $viewModel = $builder->build(
                     $this->cachedResult($email),
-                    $this->app->make(FeatureRegistry::class)->enabled($options)
+                    $this->app->make(FeatureRegistry::class)->enabled($options),
+                    auth()->user()
                 );
                 if ($viewModel['state'] === 'empty') {
                     return;
                 }
+
+                $viewModel['conversationId'] = is_object($conversation) && isset($conversation->id)
+                    ? (int) $conversation->id
+                    : 0;
 
                 $viewModel['layoutDefault'] = $options->get('spatbridge.layout_default', 'stacked') === 'tabbed'
                     ? 'tabbed'
