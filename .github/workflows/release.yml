@@ -115,6 +115,10 @@ jobs:
 
       # export-ignore is exactly the kind of edit that can silently gut an
       # artifact, so the archive is inspected before anyone can install it.
+      # Every tracked file under the runtime folders must be in it (a pattern,
+      # so new features, views, scripts and migrations are covered without
+      # editing this step), plus a few named files, so deleting one from the
+      # repo by accident fails here too.
       - name: Verify the archive
         run: |
           set -euo pipefail
@@ -123,20 +127,48 @@ jobs:
             echo "::error::archive top-level folder is '$top', expected exactly 'SpatBridge'"
             exit 1
           fi
+          unzip -Z1 freescout-spat-bridge.zip | grep -v '/$' | sort > archive-files.txt
+          git ls-tree -r --name-only "$TAG_NAME" -- \
+            module.json LICENSE README.md \
+            Console Database Features Http Providers Public Resources Services \
+            | sed 's|^|SpatBridge/|' | sort > runtime-files.txt
+          for dir in Console Database/Migrations Features Http/Controllers Providers Public/js Resources/views Services; do
+            if ! grep -q "^SpatBridge/$dir/" runtime-files.txt; then
+              echo "::error::no tracked files under $dir"
+              exit 1
+            fi
+          done
+          missing=$(comm -23 runtime-files.txt archive-files.txt)
+          if [ -n "$missing" ]; then
+            echo "::error::archive is missing runtime files (check .gitattributes export-ignore):"
+            echo "$missing"
+            exit 1
+          fi
           for required in \
             SpatBridge/module.json \
             SpatBridge/Providers/SpatBridgeServiceProvider.php \
             SpatBridge/Services/SpatClient.php \
             SpatBridge/Services/SidebarBuilder.php \
+            SpatBridge/Services/EventRouter.php \
             SpatBridge/Features/PlayerCard/PlayerCardFeature.php \
+            SpatBridge/Features/ETransfers/ETransfersFeature.php \
+            SpatBridge/Features/Waitlist/WaitlistFeature.php \
             SpatBridge/Public/js/sidebar.js \
+            SpatBridge/Public/js/actions.js \
             SpatBridge/Http/routes.php \
             SpatBridge/Http/Controllers/SpatBridgeSettingsController.php \
+            SpatBridge/Http/Controllers/ActionController.php \
+            SpatBridge/Http/Controllers/EventsController.php \
+            SpatBridge/Http/Controllers/EventLogController.php \
+            SpatBridge/Console/PruneEventsCommand.php \
+            SpatBridge/Database/Migrations/2026_10_26_000000_create_spatbridge_events_table.php \
             SpatBridge/Resources/views/sidebar.blade.php \
+            SpatBridge/Resources/views/action/preview.blade.php \
+            SpatBridge/Resources/views/events/log.blade.php \
             SpatBridge/LICENSE \
             SpatBridge/README.md
           do
-            if ! unzip -Z1 freescout-spat-bridge.zip | grep -qx "$required"; then
+            if ! grep -qx "$required" archive-files.txt; then
               echo "::error::archive is missing $required"
               exit 1
             fi
