@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Waitlist panel for the customer's SportsPress waitlist entries, with Offer,
+  Re-offer, Withdraw offer and Remove from waitlist actions (replaces the
+  separate SplmWaitlist module).
 - "Events from WordPress" settings section (webhook URL with a copy button, note
   and tag switches, a tag and create switch per event, mailbox for new tickets,
   "Post notes as") and an admin-only event log page at

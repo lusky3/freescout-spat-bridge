@@ -176,6 +176,58 @@
     }
 
     /**
+     * The offer form shown before a waitlist offer is previewed. Preview
+     * requests the dry run again with the hours and message added.
+     */
+    function initOfferForm(root, form) {
+        if (form.getAttribute('data-bound') === '1' || !window.jQuery) {
+            return;
+        }
+        form.setAttribute('data-bound', '1');
+
+        var hours = form.querySelector('.spatbridge-offer-hours');
+        var message = form.querySelector('.spatbridge-offer-message');
+        var button = form.querySelector('.spatbridge-offer-preview');
+        var errorBox = form.querySelector('.spatbridge-offer-error');
+
+        function showError(text) {
+            if (errorBox) {
+                errorBox.textContent = text;
+                errorBox.hidden = text === '';
+            }
+        }
+
+        if (!button) {
+            return;
+        }
+        button.addEventListener('click', function (event) {
+            event.preventDefault();
+            var count = parseInt(hours ? hours.value : '', 10);
+            if (isNaN(count) || count < 1 || count > 720) {
+                showError('Enter a number of hours from 1 to 720.');
+                return;
+            }
+            var params = {};
+            try {
+                params = JSON.parse(form.getAttribute('data-params') || '{}') || {};
+            } catch (e) {
+                params = {};
+            }
+            params.hours = count;
+            var note = message ? message.value.trim() : '';
+            if (note !== '') {
+                params.message = note.substring(0, 500);
+            }
+            button.disabled = true;
+            showError('');
+            loadPreview(root, form, params, function (text) {
+                button.disabled = false;
+                showError(text);
+            });
+        });
+    }
+
+    /**
      * Called by FreeScout once the preview partial is in the pop-up.
      * Confirm stays disabled until every confirmation is ticked and while a
      * run is in flight; the idempotency key makes a repeated run harmless.
@@ -185,6 +237,11 @@
         var pick = root ? root.querySelector('.spatbridge-pick') : null;
         if (pick) {
             initPick(root, pick);
+            return;
+        }
+        var offerForm = root ? root.querySelector('.spatbridge-offer-form') : null;
+        if (offerForm) {
+            initOfferForm(root, offerForm);
             return;
         }
         var box = root ? root.querySelector('.spatbridge-action-preview') : null;
