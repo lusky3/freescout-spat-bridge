@@ -73,6 +73,31 @@ freescout-splm-waitlist harness, which uses 8081 and 33062.
 
 The compose file uses throwaway credentials and is for local testing only.
 
+## End-to-end tests
+
+`e2e/run-e2e.sh` starts a real WordPress site (sportspress-sandbox with the
+SportsPress Admin Tools plugins) and a real FreeScout with this module, loads
+a known player fixture, and checks through `php artisan tinker` that the
+connection test and the sidebar Player card work, including when WordPress is
+down. It prints one `PASS` or `FAIL` line per check and exits non-zero on any
+failure. It expects
+[sportspress-sandbox](https://github.com/lusky3/sportspress-sandbox) and
+[SportsPress-Admin-Tools](https://github.com/lusky3/SportsPress-Admin-Tools)
+checked out next to this repository. Point `SANDBOX_PATH` and `SPAT_PATH` at
+other checkouts to test other branches:
+
+```sh
+SANDBOX_PATH=~/src/sportspress-sandbox SPAT_PATH=~/src/SportsPress-Admin-Tools e2e/run-e2e.sh
+docker compose -p spatbridge-e2e down -v   # tear down afterwards
+```
+
+WordPress listens on port 8094 and FreeScout on 8095. The E2E workflow runs
+the same script on every pull request against the `main` branches of both
+repositories. To test against unmerged branches, set the repository variables
+`SPAT_REF` and `SANDBOX_REF` to those branch names, and delete the variables
+once the branches merge. A manual run of the workflow takes the two refs as
+inputs.
+
 ## Releasing
 
 Releases are cut from `main`, and FreeScout's **Update Now** button uses them.

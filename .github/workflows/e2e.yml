@@ -1,0 +1,83 @@
+name: E2E
+
+# Brings up a real WordPress (sportspress-sandbox + the SPAT plugins) and a
+# real FreeScout running this module, then asserts through tinker that the
+# sidebar Player card works end to end. Unit tests prove each half; this
+# proves the wire contract between them still holds.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      spat_ref:
+        description: SportsPress-Admin-Tools branch or tag to test against
+        default: main
+      sandbox_ref:
+        description: sportspress-sandbox branch or tag to test against
+        default: main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: Full stack end-to-end
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
+
+      # Checked out into a named subdirectory: e2e/run-e2e.sh expects the
+      # sibling checkouts next to this repo, as in a local ~/git layout.
+      - name: Checkout this repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: freescout-spat-bridge
+          persist-credentials: false
+
+      # A manual run takes its refs from the inputs. Other runs use the repo
+      # variables SPAT_REF / SANDBOX_REF when set (to test a PR against
+      # unmerged SPAT or sandbox branches), otherwise main. Both repos are
+      # public, and run-e2e.sh needs no history.
+      - name: Checkout sibling repos
+        env:
+          SPAT_REF: ${{ inputs.spat_ref || vars.SPAT_REF || 'main' }}
+          SANDBOX_REF: ${{ inputs.sandbox_ref || vars.SANDBOX_REF || 'main' }}
+        run: |
+          set -euo pipefail
+          echo "SportsPress-Admin-Tools @ ${SPAT_REF}, sportspress-sandbox @ ${SANDBOX_REF}"
+          git clone --depth 1 --branch "$SPAT_REF" https://github.com/lusky3/SportsPress-Admin-Tools.git SportsPress-Admin-Tools
+          git clone --depth 1 --branch "$SANDBOX_REF" https://github.com/lusky3/sportspress-sandbox.git sportspress-sandbox
+
+      # Docker and Compose v2 are preinstalled on ubuntu-latest runners.
+      - name: Run the end-to-end stack
+        working-directory: freescout-spat-bridge
+        run: ./e2e/run-e2e.sh
+
+      - name: Collect container logs
+        if: failure()
+        working-directory: freescout-spat-bridge/e2e
+        run: docker compose -p spatbridge-e2e logs --no-color > "$RUNNER_TEMP/e2e-compose.log" 2>&1 || true
+
+      - name: Upload container logs
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-compose-logs
+          path: ${{ runner.temp }}/e2e-compose.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Tear down
+        if: always()
+        working-directory: freescout-spat-bridge/e2e
+        run: docker compose -p spatbridge-e2e down -v || true
