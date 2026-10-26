@@ -6,6 +6,7 @@
     <file>Http</file>
     <file>Providers</file>
     <file>Services</file>
+    <file>scripts</file>
     <file>Tests</file>
 
     <arg name="extensions" value="php"/>

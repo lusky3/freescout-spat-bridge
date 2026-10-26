@@ -18,3 +18,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   switch and a "League info unavailable" state.
 - Read-only player card: one row per player with team, position, skill, next
   game, and registration attention and history.
+- Release workflow and release guard: a release needs a version bump and a
+  changelog entry, and PRs that change shipped files need a changelog entry.

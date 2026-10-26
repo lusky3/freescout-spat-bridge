@@ -23,7 +23,8 @@
     "autoload-dev": {
         "psr-4": {
             "Tests\\": "Tests/",
-            "App\\": "Tests/Support/AppStubs/"
+            "App\\": "Tests/Support/AppStubs/",
+            "Scripts\\": "scripts/"
         }
     },
     "config": {
