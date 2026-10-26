@@ -33,6 +33,20 @@ function git(string ...$args): array
 }
 
 /**
+ * A file's contents at a revision, or '' when the revision has no such file.
+ */
+function fileAtRevision(string $revision, string $path): string
+{
+    $spec = escapeshellarg($revision . ':' . $path);
+    exec('git cat-file -e ' . $spec . ' 2>/dev/null', $ignored, $status);
+    if ($status !== 0) {
+        return '';
+    }
+
+    return implode("\n", git('show', $revision . ':' . $path));
+}
+
+/**
  * Changed paths that git check-attr does not mark export-ignore.
  *
  * @param string[] $paths
@@ -89,13 +103,13 @@ $mode = $argv[1] ?? '';
 $arg = $argv[2] ?? '';
 
 if ($mode === 'pr' && $arg !== '') {
-    $shipped = shippedOnly(git('diff', '--name-only', $arg . '...HEAD'));
+    $shipped = shippedOnly(git('diff', '--name-only', '--no-renames', $arg . '...HEAD'));
     if (count($shipped) === 0) {
         echo "No shipped files changed; no changelog entry needed.\n";
         exit(0);
     }
 
-    $base = implode("\n", git('show', $arg . ':CHANGELOG.md'));
+    $base = fileAtRevision($arg, 'CHANGELOG.md');
     $head = (string) file_get_contents('CHANGELOG.md');
     $module = json_decode((string) file_get_contents('module.json'), true);
     $moduleVersion = is_array($module) && isset($module['version']) ? (string) $module['version'] : '';
@@ -136,7 +150,7 @@ if ($mode === 'tag' && $arg !== '') {
         // Fall back to HEAD when the tag has not been created yet (local rehearsal).
         exec('git rev-parse -q --verify ' . escapeshellarg('refs/tags/' . $arg . '^{commit}') . ' 2>&1', $out, $status);
         $target = $status === 0 ? $arg : 'HEAD';
-        $shipped = shippedOnly(git('diff', '--name-only', $previous, $target));
+        $shipped = shippedOnly(git('diff', '--name-only', '--no-renames', $previous, $target));
     }
 
     failWith(ReleaseGuard::tagErrors(
