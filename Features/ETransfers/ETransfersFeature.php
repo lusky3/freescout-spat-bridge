@@ -177,7 +177,7 @@ final class ETransfersFeature implements Feature
             $actions[] = new RowAction(
                 $this->key(),
                 'match',
-                __('Match'),
+                $this->matchLabel($match),
                 ['log_id' => $logId, 'order_id' => $orderId]
             );
         }
@@ -192,6 +192,21 @@ final class ETransfersFeature implements Feature
             'warn',
             $actions
         );
+    }
+
+    /**
+     * "Match $325.00 from Pat Smith", so several Match links on one order row
+     * can be told apart. Always starts with "Match": FreeScout reads a modal
+     * title that starts with '#' as a jQuery selector, so WordPress text must
+     * never lead.
+     */
+    private function matchLabel(array $match): string
+    {
+        $name = $this->str($match, 'from_name');
+        $reference = $this->str($match, 'reference');
+        $who = $name !== '' ? __('from') . ' ' . $name : ($reference !== '' ? __('ref') . ' ' . $reference : '');
+
+        return implode(' ', array_filter([__('Match'), $this->money($match, 'amount'), $who], 'strlen'));
     }
 
     private function possibleMatchLine(array $match): string

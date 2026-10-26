@@ -60,6 +60,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Each "Match" link on an on-hold order names the transfer's amount and
+  sender ("Match $325.00 from Pat Smith"), so several possible matches can be
+  told apart.
 - The mailbox new event tickets go to is always in ARL League's scope, even
   when "Show in mailboxes" doesn't list it: later events find the ticket
   instead of opening another, and its sidebar and actions work.

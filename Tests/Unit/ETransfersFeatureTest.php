@@ -92,11 +92,35 @@ class ETransfersFeatureTest extends TestCase
         $this->assertSame(['Possible match: Oct 21 · $325.00 from Pat Smith (ref CA9xx)'], $row->lines());
         $this->assertSame(
             [
-                ['etransfers', 'match', 'Match', ['log_id' => 31, 'order_id' => 5107]],
+                ['etransfers', 'match', 'Match $325.00 from Pat Smith', ['log_id' => 31, 'order_id' => 5107]],
                 ['etransfers', 'match', 'Match a transfer…', ['order_id' => 5107]],
             ],
             $this->actionData($row)
         );
+    }
+
+    public function test_several_possible_matches_get_distinct_labels_that_start_with_match(): void
+    {
+        $order = $this->onHold(['possible_matches' => [
+            ['log_id' => 31, 'amount' => '325.00', 'from_name' => 'Pat Smith', 'reference' => 'CA9xx'],
+            ['log_id' => 32, 'amount' => '300', 'from_name' => '#1 Fan', 'reference' => 'CB1'],
+            ['log_id' => 33, 'amount' => '325.00', 'from_name' => '', 'reference' => 'CC2'],
+            ['log_id' => 34],
+        ]]);
+        $row = $this->present([], [$order])->rows()[0];
+
+        $labels = array_column($this->actionData($row), 2);
+        $this->assertSame([
+            'Match $325.00 from Pat Smith',
+            'Match $300.00 from #1 Fan',
+            'Match $325.00 ref CC2',
+            'Match',
+            'Match a transfer…',
+        ], $labels);
+        // FreeScout treats a modal title starting with '#' as a selector.
+        foreach ($labels as $label) {
+            $this->assertStringStartsWith('Match', $label);
+        }
     }
 
     public function test_an_on_hold_order_without_possible_matches_can_still_pick_a_transfer(): void
