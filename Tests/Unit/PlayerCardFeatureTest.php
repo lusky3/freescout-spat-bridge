@@ -17,7 +17,7 @@ class PlayerCardFeatureTest extends TestCase
                 'team_id' => 501, 'team' => 'Ducks', 'current' => true, 'captain' => true,
             ]],
             'next_game' => [
-                'event_id' => 7001, 'start' => '2025-10-30T21:45:00-04:00',
+                'event_id' => 7001, 'start' => '2025-10-30T21:45:00Z',
                 'opponent' => 'Otters', 'venue' => 'Rink 2',
             ],
         ], $overrides);
@@ -140,6 +140,36 @@ class PlayerCardFeatureTest extends TestCase
         $rows = $panel->rows();
         $this->assertSame('Registration history', $rows[2]->title());
         $this->assertSame(['Order #4821 → player created · Sep 3'], $rows[2]->lines());
+    }
+
+    public function test_dates_are_shown_in_the_viewing_agents_timezone(): void
+    {
+        $feature = new PlayerCardFeature(function () {
+            return new \DateTimeZone('America/Toronto');
+        });
+        // 21:45 UTC on Oct 30 is 5:45 PM EDT; 02:00 UTC on Sep 3 is still Sep 2 in Toronto.
+        $player = $this->player(['next_game' => [
+            'event_id' => 7001, 'start' => '2025-10-30T21:45:00Z', 'opponent' => 'Otters', 'venue' => 'Rink 2',
+        ]]);
+        $registration = $this->registration();
+        $registration['entries'][0]['at'] = '2026-09-03T02:00:00Z';
+
+        $rows = $feature->present($this->sections([$player], $registration))->rows();
+
+        $this->assertContains('Next game Thu Oct 30, 5:45 PM vs Otters · Rink 2', $rows[0]->lines());
+        $this->assertSame(['Order #4821 → player created · Sep 2'], $rows[2]->lines());
+    }
+
+    public function test_an_offset_in_the_timestamp_is_converted_not_kept(): void
+    {
+        $feature = new PlayerCardFeature(function () {
+            return new \DateTimeZone('UTC');
+        });
+
+        $player = $this->player(['next_game' => ['start' => '2025-10-30T21:45:00-04:00', 'opponent' => 'Otters', 'venue' => 'Rink 2']]);
+        $panel = $feature->present($this->sections([$player]));
+
+        $this->assertContains('Next game Fri Oct 31, 1:45 AM vs Otters · Rink 2', $panel->rows()[0]->lines());
     }
 
     public function test_summary_when_fine(): void

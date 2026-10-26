@@ -8,6 +8,7 @@ use Modules\SpatBridge\Features\GuardsActionParams;
 use Modules\SpatBridge\Features\Panel;
 use Modules\SpatBridge\Features\PanelRow;
 use Modules\SpatBridge\Features\RowAction;
+use Modules\SpatBridge\Services\Support\Timezones;
 
 /**
  * Player card: one row per player on the customer's email, plus registration
@@ -22,6 +23,18 @@ final class PlayerCardFeature implements Feature, GuardsActionParams, AddsNoteFo
     private const SEP = ' · ';
     private const EMAIL_FORM_VIEW = 'spatbridge::action.change_email_form';
     private const ERROR_VIEW = 'spatbridge::action.error';
+
+    /** @var callable(): \DateTimeZone */
+    private $timezone;
+
+    /**
+     * @param callable|null $timezone Returns the zone to show dates in; the
+     *        viewing agent's FreeScout time zone by default.
+     */
+    public function __construct(?callable $timezone = null)
+    {
+        $this->timezone = $timezone ?? [Timezones::class, 'agent'];
+    }
 
     public function key(): string
     {
@@ -328,7 +341,7 @@ final class PlayerCardFeature implements Feature, GuardsActionParams, AddsNoteFo
     }
 
     /**
-     * Keeps the offset the timestamp carries; no conversion to server time.
+     * Converts the timestamp to the viewing agent's zone.
      */
     private function formatDate(string $iso, string $format): string
     {
@@ -337,7 +350,7 @@ final class PlayerCardFeature implements Feature, GuardsActionParams, AddsNoteFo
         }
 
         try {
-            return (new \DateTimeImmutable($iso))->format($format);
+            return (new \DateTimeImmutable($iso))->setTimezone(($this->timezone)())->format($format);
         } catch (\Exception $e) {
             return '';
         }

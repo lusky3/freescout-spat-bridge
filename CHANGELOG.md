@@ -105,3 +105,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   routes) and a site URL that redirects; redirects are no longer followed.
 - The player card summary keeps the player and team when registration needs
   attention.
+- Player card dates (next game, registration history) are shown in the viewing
+  agent's FreeScout time zone, like the e-Transfers and Waitlist panels,
+  instead of the zone WordPress sent.
