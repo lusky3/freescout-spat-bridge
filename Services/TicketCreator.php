@@ -6,9 +6,10 @@ namespace Modules\SpatBridge\Services;
  * Opens a ticket for an event when the customer has no open one and that
  * event type's "create" switch is on.
  *
- * The ticket never mails the customer: it is a phone conversation whose only
- * thread is an internal note, and it carries `spatbridge` meta so the
- * `conversation.skip_send_reply_to_customer` filter (skipSend) stops any mail.
+ * Opening the ticket never mails the customer: it is a phone conversation
+ * whose only thread is an internal note, and it carries `spatbridge` meta so
+ * the `conversation.skip_send_reply_to_customer` filter (skipSend) stops any
+ * mail until an agent writes a real reply.
  */
 class TicketCreator
 {
@@ -72,21 +73,46 @@ class TicketCreator
 
     /**
      * The `conversation.skip_send_reply_to_customer` filter: no customer
-     * mail from a ticket the bridge created.
+     * mail from a ticket the bridge created while it holds only notes. Once
+     * an agent writes a real reply, the reply goes out as usual.
      *
      * @param mixed $skip
      * @param mixed $conversation
+     * @param (callable(object): bool)|null $hasAgentReply Seam for the threads query.
      */
-    public static function skipSend($skip, $conversation): bool
+    public static function skipSend($skip, $conversation, ?callable $hasAgentReply = null): bool
     {
         if ($skip) {
             return true;
         }
 
-        return is_object($conversation)
+        $bridgeTicket = is_object($conversation)
             && method_exists($conversation, 'getMeta')
             && !empty($conversation->getMeta(self::META_KEY));
+        if (!$bridgeTicket) {
+            return false;
+        }
+
+        return !call_user_func($hasAgentReply ?? [self::class, 'hasAgentReply'], $conversation);
     }
+
+    // @codeCoverageIgnoreStart
+    //
+    // One exists-query on FreeScout's threads table; the unit tests pass
+    // their own check to skipSend().
+
+    /**
+     * Whether the conversation has a customer-visible reply from an agent.
+     *
+     * @param object $conversation
+     */
+    public static function hasAgentReply($conversation): bool
+    {
+        return \App\Thread::where('conversation_id', (int) $conversation->id)
+            ->where('type', \App\Thread::TYPE_MESSAGE)
+            ->exists();
+    }
+    // @codeCoverageIgnoreEnd
 
     /**
      * "Pat Q Smith" → first name "Pat", last name "Q Smith".

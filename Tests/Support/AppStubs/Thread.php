@@ -10,6 +10,7 @@ namespace App;
  */
 class Thread
 {
+    public const TYPE_MESSAGE = 2;
     public const TYPE_NOTE = 3;
 
     /** @var array<int, array{0: array, 1: mixed, 2: mixed}> */

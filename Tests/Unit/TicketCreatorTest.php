@@ -162,15 +162,53 @@ class TicketCreatorTest extends TestCase
         $creator->create($this->event('pat@example.com', ['amount' => '5']), $this->user, 3);
     }
 
-    public function test_skip_send_filter_blocks_customer_mail_on_bridge_tickets_only(): void
+    /**
+     * A threads check that answers $hasReply and records what it was asked.
+     *
+     * @param int[] $asked
+     */
+    private function replyCheck(bool $hasReply, array &$asked): callable
     {
-        $bridgeTicket = new Conversation();
-        $bridgeTicket->setMeta(TicketCreator::META_KEY, ['event_id' => self::EVENT_ID]);
-        $otherTicket = new Conversation();
+        return function ($conversation) use ($hasReply, &$asked) {
+            $asked[] = $conversation->id;
 
-        $this->assertTrue(TicketCreator::skipSend(false, $bridgeTicket));
-        $this->assertFalse(TicketCreator::skipSend(false, $otherTicket));
-        $this->assertTrue(TicketCreator::skipSend(true, $otherTicket));
-        $this->assertFalse(TicketCreator::skipSend(false, null));
+            return $hasReply;
+        };
+    }
+
+    private function bridgeTicket(): Conversation
+    {
+        $ticket = new Conversation();
+        $ticket->id = 900;
+        $ticket->setMeta(TicketCreator::META_KEY, ['event_id' => self::EVENT_ID]);
+
+        return $ticket;
+    }
+
+    public function test_skip_send_blocks_mail_on_a_bridge_ticket_with_only_notes(): void
+    {
+        $asked = [];
+
+        $this->assertTrue(TicketCreator::skipSend(false, $this->bridgeTicket(), $this->replyCheck(false, $asked)));
+        $this->assertSame([900], $asked);
+    }
+
+    public function test_skip_send_lets_an_agent_reply_on_a_bridge_ticket_go_out(): void
+    {
+        $asked = [];
+
+        $this->assertFalse(TicketCreator::skipSend(false, $this->bridgeTicket(), $this->replyCheck(true, $asked)));
+        $this->assertSame([900], $asked);
+    }
+
+    public function test_skip_send_passes_other_tickets_through_without_a_query(): void
+    {
+        $asked = [];
+        $check = $this->replyCheck(false, $asked);
+
+        $this->assertFalse(TicketCreator::skipSend(false, new Conversation(), $check));
+        $this->assertTrue(TicketCreator::skipSend(true, new Conversation(), $check));
+        $this->assertFalse(TicketCreator::skipSend(false, null, $check));
+        $this->assertSame([], $asked);
     }
 }
