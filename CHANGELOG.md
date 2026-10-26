@@ -60,6 +60,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- When a preview asked for from the Change email form, the waitlist Offer form
+  or the e-Transfer picker is refused (for example, the email is already in
+  use), the form stays open with the message in it, so the agent can correct
+  it and try again.
 - Each "Match" link on an on-hold order names the transfer's amount and
   sender ("Match $325.00 from Pat Smith"), so several possible matches can be
   told apart.

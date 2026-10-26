@@ -56,8 +56,27 @@
     }
 
     /**
+     * The message of the server's error partial (marked data-spatbridge-error),
+     * or null when html is anything else. A <template> parses without running
+     * scripts or loading images, and the message is read back as text only.
+     */
+    function failureText(html) {
+        var template = document.createElement('template');
+        template.innerHTML = html;
+        var failed = template.content.querySelector('[data-spatbridge-error]');
+        if (!failed) {
+            return null;
+        }
+        var message = failed.querySelector('.spatbridge-action-failed-message');
+        var problem = message ? message.textContent.trim() : '';
+        return problem === '' ? GENERIC_ERROR : problem;
+    }
+
+    /**
      * Loads the preview for the given params into the pop-up in place of what
-     * it shows now (the picker), then wires the new content up.
+     * it shows now (the picker or a form), then wires the new content up. If
+     * the bridge or WordPress refuses (the error partial), the form stays and
+     * onError gets the message, so the agent can fix the input and try again.
      */
     function loadPreview(root, pick, params, onError) {
         var body = root.querySelector('.modal-body') || pick.parentNode;
@@ -72,6 +91,11 @@
                 conversation_id: pick.getAttribute('data-conversation-id')
             },
             success: function (html) {
+                var problem = failureText(html);
+                if (problem !== null) {
+                    onError(problem);
+                    return;
+                }
                 body.innerHTML = html; // The server's escaped partial, as FreeScout loads its own.
                 window.spatbridgeActionInit(root);
             },
