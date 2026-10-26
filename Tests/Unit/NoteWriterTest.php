@@ -62,4 +62,16 @@ class NoteWriterTest extends TestCase
         $this->assertSame($conversation, $conv);
         $this->assertSame($customer, $cust);
     }
+
+    public function test_add_throws_when_freescout_refuses_the_note(): void
+    {
+        Thread::$result = false;
+        $conversation = new \stdClass();
+        $conversation->customer = null;
+        $user = new \stdClass();
+        $user->id = 4;
+
+        $this->expectException(\RuntimeException::class);
+        (new NoteWriter())->add($conversation, $user, '<p>x</p>');
+    }
 }

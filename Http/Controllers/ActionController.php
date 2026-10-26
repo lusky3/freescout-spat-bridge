@@ -10,6 +10,7 @@ use Modules\SpatBridge\Features\FeatureRegistry;
 use Modules\SpatBridge\Services\ActionPermissions;
 use Modules\SpatBridge\Services\ClientResult;
 use Modules\SpatBridge\Services\ConnectionMessage;
+use Modules\SpatBridge\Services\MailboxScope;
 use Modules\SpatBridge\Services\NoteWriter;
 use Modules\SpatBridge\Services\SpatClient;
 use Modules\SpatBridge\Services\Support\OptionStoreInterface;
@@ -17,12 +18,13 @@ use Psr\Log\LoggerInterface;
 
 /**
  * The action pop-up: preview (a WordPress dry run), run, and the read-only
- * queries a pop-up may need. Every request is checked from scratch; nothing
- * the browser sends back from an earlier preview is trusted.
+ * queries a pop-up may need. Every request is checked from scratch, and Run
+ * only runs exactly what this agent previewed (the preview binding).
  */
 class ActionController extends Controller
 {
     public const NO_PERMISSION = "You don't have permission to run this action.";
+    public const PREVIEW_EXPIRED = 'This preview has expired. Close the window and open the action again.';
 
     private const PREVIEW_VIEW = 'spatbridge::action.preview';
     private const ERROR_VIEW = 'spatbridge::action.error';
@@ -30,6 +32,8 @@ class ActionController extends Controller
     private const QUERY_PATTERN = '/^[a-z0-9_]{1,64}$/';
     // Laravel 5.5 cache TTLs are minutes; WordPress keeps replays for 24 h.
     private const NOTED_TTL = 1440;
+    // Minutes an agent has between seeing a preview and confirming it.
+    private const PREVIEW_TTL = 60;
 
     /** @var SpatClient */
     private $client;
@@ -60,7 +64,9 @@ class ActionController extends Controller
     {
         $context = $this->context($request, $this->stringInput($request, 'action'), true);
         if (isset($context['error'])) {
-            return $this->renderView(self::ERROR_VIEW, ['message' => $context['error'][1]], $context['error'][0]);
+            // Refused before any WordPress call. 200 so the pop-up shows the
+            // message; FreeScout replaces any non-2xx body with a generic error.
+            return $this->renderView(self::ERROR_VIEW, ['message' => $context['error'][1]], 200);
         }
 
         /** @var Feature $feature */
@@ -83,10 +89,10 @@ class ActionController extends Controller
         $key = $this->newIdempotencyKey();
         $result = $this->runAction($context, $key, true);
         if (!$result->ok()) {
-            // 200 so the pop-up shows the message; FreeScout replaces any
-            // non-2xx body with a generic error.
             return $this->renderView(self::ERROR_VIEW, ['message' => ConnectionMessage::actionMessage($result)], 200);
         }
+
+        \Cache::put($this->previewCacheKey($key), $this->previewBinding($context), self::PREVIEW_TTL);
 
         $data = $result->data() ?: [];
 
@@ -110,6 +116,12 @@ class ActionController extends Controller
             return $this->error(__('This pop-up is out of date. Close it and open the action again.'), 400);
         }
 
+        // Hashed before the confirm codes are mapped, so ticking a box can't
+        // change what was previewed.
+        if (\Cache::get($this->previewCacheKey($key)) !== $this->previewBinding($context)) {
+            return $this->error(__(self::PREVIEW_EXPIRED), 409);
+        }
+
         $codes = array_values(array_filter((array) $request->input('confirm', []), 'is_string'));
         /** @var Feature $feature */
         $feature = $context['feature'];
@@ -121,6 +133,9 @@ class ActionController extends Controller
         }
 
         $data = $result->data() ?: [];
+        if (!empty($data['dry_run'])) {
+            return $this->error(__("WordPress didn't run the action. Try again."), 200);
+        }
         $summary = $this->text($data, 'summary');
         $message = $summary === '' ? __('Done.') : $summary;
 
@@ -171,6 +186,9 @@ class ActionController extends Controller
         if (!$user->can('view', $conversation)) {
             return ['error' => [403, __("You don't have access to this conversation.")]];
         }
+        if (!MailboxScope::allows($this->options, (int) ($conversation->mailbox_id ?? 0))) {
+            return ['error' => [403, __("ARL League isn't turned on for this mailbox.")]];
+        }
 
         $feature = $this->enabledFeature($this->stringInput($request, 'feature'));
         if ($feature === null || !(new ActionPermissions($this->options))->allows($user, $feature->key())) {
@@ -197,6 +215,39 @@ class ActionController extends Controller
             'name' => $name,
             'params' => $params,
         ];
+    }
+
+    private function previewCacheKey(string $key): string
+    {
+        return 'spatbridge.preview.' . md5($key);
+    }
+
+    /**
+     * Who previewed what: the agent, the conversation, the feature action
+     * and its params (with keys sorted, so key order doesn't matter).
+     */
+    private function previewBinding(array $context): string
+    {
+        $params = $context['params'];
+        $this->sortKeys($params);
+
+        return sha1(implode('|', [
+            (int) $context['user']->id,
+            (int) $context['conversation']->id,
+            $context['feature']->key(),
+            $context['name'],
+            $this->paramsJson($params),
+        ]));
+    }
+
+    private function sortKeys(array &$value): void
+    {
+        ksort($value);
+        foreach ($value as &$item) {
+            if (is_array($item)) {
+                $this->sortKeys($item);
+            }
+        }
     }
 
     private function stringInput(Request $request, string $key): string

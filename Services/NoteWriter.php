@@ -31,10 +31,11 @@ class NoteWriter
      * @param object $conversation FreeScout conversation (with a customer).
      * @param object $user The agent the note is credited to.
      * @param string $html A body built by actionBody(), never raw input.
+     * @throws \RuntimeException When FreeScout refuses the note.
      */
     public function add($conversation, $user, string $html): void
     {
-        \App\Thread::createExtended(
+        $created = \App\Thread::createExtended(
             [
                 'type' => \App\Thread::TYPE_NOTE,
                 'body' => $html,
@@ -43,6 +44,10 @@ class NoteWriter
             $conversation,
             $conversation->customer
         );
+        // createExtended() reports bad input by returning false, not throwing.
+        if ($created === false) {
+            throw new \RuntimeException('FreeScout did not create the note.');
+        }
     }
 
     private static function escape(string $text): string

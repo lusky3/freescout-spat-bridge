@@ -18,24 +18,30 @@ class Thread
     /** @var \Throwable|null Thrown by the next createExtended() call when set. */
     public static $failWith;
 
+    /** @var mixed What createExtended() returns; core returns false on bad input. */
+    public static $result = true;
+
     /**
      * @param mixed $conversation
      * @param mixed $customer
-     * @return bool
+     * @return mixed
      */
     public static function createExtended(array $data, $conversation = null, $customer = null)
     {
         if (self::$failWith !== null) {
             throw self::$failWith;
         }
-        self::$created[] = [$data, $conversation, $customer];
+        if (self::$result !== false) {
+            self::$created[] = [$data, $conversation, $customer];
+        }
 
-        return true;
+        return self::$result;
     }
 
     public static function reset(): void
     {
         self::$created = [];
         self::$failWith = null;
+        self::$result = true;
     }
 }

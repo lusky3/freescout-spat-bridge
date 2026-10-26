@@ -8,6 +8,7 @@ use Modules\SpatBridge\Features\FeatureRegistry;
 use Modules\SpatBridge\Features\PlayerCard\PlayerCardFeature;
 use Modules\SpatBridge\Services\ActionPermissions;
 use Modules\SpatBridge\Services\ClientResult;
+use Modules\SpatBridge\Services\MailboxScope;
 use Modules\SpatBridge\Services\SidebarBuilder;
 use Modules\SpatBridge\Services\SpatClient;
 use Modules\SpatBridge\Services\Support\LaravelOptionStore;
@@ -241,17 +242,9 @@ class SpatBridgeServiceProvider extends ServiceProvider
         return $email;
     }
 
-    /**
-     * Empty or missing `spatbridge.mailboxes` means every mailbox.
-     */
     private function shouldShowForMailbox(int $mailboxId): bool
     {
-        $selected = $this->app->make(OptionStoreInterface::class)->get('spatbridge.mailboxes', []);
-        if (!is_array($selected) || $selected === []) {
-            return true;
-        }
-
-        return in_array($mailboxId, array_map('intval', $selected), true);
+        return MailboxScope::allows($this->app->make(OptionStoreInterface::class), $mailboxId);
     }
 
     /**

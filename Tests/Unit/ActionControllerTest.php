@@ -29,6 +29,10 @@ class ActionControllerTest extends TestCase
     private $options;
     /** @var object */
     private $conversation;
+    /** @var object In another mailbox, with another id. */
+    private $otherConversation;
+    /** @var string The key the run requests post; previewed() sets it. */
+    private $previewKey = self::KEY;
 
     protected function setUp(): void
     {
@@ -41,6 +45,11 @@ class ActionControllerTest extends TestCase
         $this->conversation->id = 77;
         $this->conversation->customer_email = self::CUSTOMER_EMAIL;
         $this->conversation->customer = new FakeCustomer(self::CUSTOMER_EMAIL);
+        $this->conversation->mailbox_id = 3;
+
+        $this->otherConversation = clone $this->conversation;
+        $this->otherConversation->id = 78;
+        $this->otherConversation->mailbox_id = 5;
     }
 
     private function feature(?array $override = null): Feature
@@ -76,7 +85,7 @@ class ActionControllerTest extends TestCase
 
             public function actionKeys(): array
             {
-                return ['match'];
+                return ['match', 'unmatch'];
             }
 
             public function previewOverride(string $action, array $params): ?array
@@ -96,7 +105,7 @@ class ActionControllerTest extends TestCase
     }
 
     /**
-     * @return ActionController&object{conversation: mixed, rendered: array}
+     * @return ActionController&object{conversations: array, rendered: array}
      */
     private function controller(?array $override = null)
     {
@@ -110,14 +119,14 @@ class ActionControllerTest extends TestCase
             new NoteWriter(),
             new NullLogger()
         ) extends ActionController {
-            /** @var mixed */
-            public $conversation;
+            /** @var array<int, object> */
+            public $conversations = [];
             /** @var array<int, array{0: string, 1: array, 2: int}> */
             public $rendered = [];
 
             protected function findConversation(int $id)
             {
-                return is_object($this->conversation) && $this->conversation->id === $id ? $this->conversation : null;
+                return $this->conversations[$id] ?? null;
             }
 
             protected function renderView(string $view, array $data, int $status)
@@ -127,7 +136,7 @@ class ActionControllerTest extends TestCase
                 return $status;
             }
         };
-        $controller->conversation = $this->conversation;
+        $controller->conversations = [77 => $this->conversation, 78 => $this->otherConversation];
 
         return $controller;
     }
@@ -191,8 +200,27 @@ class ActionControllerTest extends TestCase
             'action' => 'match',
             'params' => '{"log_id":12,"order_id":5107}',
             'conversation_id' => '77',
-            'idempotency_key' => self::KEY,
+            'idempotency_key' => $this->previewKey,
         ], $overrides), $user);
+    }
+
+    /**
+     * Shows the agent the preview a Run must match (a dry run answered by
+     * WordPress), then forgets that call so run assertions start at index 0.
+     *
+     * @param ActionController $controller
+     * @return string The preview's idempotency key, also used by runRequest().
+     */
+    private function previewed($controller, $user = null, array $overrides = []): string
+    {
+        array_unshift($this->client->results, $this->dryRun());
+        $controller->preview($this->previewRequest($user ?: $this->user(), $overrides));
+        $this->assertSame('spatbridge::action.preview', end($controller->rendered)[0]);
+
+        $this->previewKey = end($this->client->calls)[1]['key'];
+        $this->client->calls = [];
+
+        return $this->previewKey;
     }
 
     private function dryRun(array $extra = []): ClientResult
@@ -370,24 +398,28 @@ class ActionControllerTest extends TestCase
     public function test_preview_forbidden_without_view_permission(): void
     {
         $controller = $this->controller();
-        $this->assertSame(403, $controller->preview($this->previewRequest($this->user(true, false))));
-        $this->assertSame('spatbridge::action.error', $controller->rendered[0][0]);
+        $this->assertSame(200, $controller->preview($this->previewRequest($this->user(true, false))));
+        $this->assertSame(
+            ['spatbridge::action.error', ['message' => "You don't have access to this conversation."], 200],
+            $controller->rendered[0]
+        );
         $this->assertSame([], $this->client->calls);
     }
 
     public function test_preview_missing_conversation_is_not_found(): void
     {
         $controller = $this->controller();
-        $this->assertSame(404, $controller->preview($this->previewRequest($this->user(), ['conversation_id' => '5'])));
+        $this->assertSame(200, $controller->preview($this->previewRequest($this->user(), ['conversation_id' => '5'])));
+        $this->assertSame(['message' => 'Conversation not found.'], $controller->rendered[0][1]);
         $this->assertSame([], $this->client->calls);
     }
 
     public function test_preview_forbidden_without_action_permission(): void
     {
         $controller = $this->controller();
-        $this->assertSame(403, $controller->preview($this->previewRequest($this->user(false))));
+        $this->assertSame(200, $controller->preview($this->previewRequest($this->user(false))));
         $this->assertSame(
-            ['spatbridge::action.error', ['message' => "You don't have permission to run this action."], 403],
+            ['spatbridge::action.error', ['message' => "You don't have permission to run this action."], 200],
             $controller->rendered[0]
         );
         $this->assertSame([], $this->client->calls);
@@ -398,7 +430,8 @@ class ActionControllerTest extends TestCase
         $this->options->set('spatbridge.features.etransfers.enabled', false);
         $controller = $this->controller();
 
-        $this->assertSame(403, $controller->preview($this->previewRequest($this->user())));
+        $this->assertSame(200, $controller->preview($this->previewRequest($this->user())));
+        $this->assertSame(['message' => "You don't have permission to run this action."], $controller->rendered[0][1]);
         $this->assertSame([], $this->client->calls);
     }
 
@@ -406,7 +439,8 @@ class ActionControllerTest extends TestCase
     {
         $controller = $this->controller();
 
-        $this->assertSame(404, $controller->preview($this->previewRequest($this->user(), ['action' => 'refund'])));
+        $this->assertSame(200, $controller->preview($this->previewRequest($this->user(), ['action' => 'refund'])));
+        $this->assertSame(['message' => "This action isn't available."], $controller->rendered[0][1]);
         $this->assertSame([], $this->client->calls);
     }
 
@@ -414,8 +448,10 @@ class ActionControllerTest extends TestCase
     {
         $controller = $this->controller();
 
-        $this->assertSame(404, $controller->preview($this->previewRequest($this->user(), ['action' => ['match']])));
-        $this->assertSame(403, $controller->preview($this->previewRequest($this->user(), ['feature' => ['x']])));
+        $controller->preview($this->previewRequest($this->user(), ['action' => ['match']]));
+        $controller->preview($this->previewRequest($this->user(), ['feature' => ['x']]));
+        $this->assertSame("This action isn't available.", $controller->rendered[0][1]['message']);
+        $this->assertSame("You don't have permission to run this action.", $controller->rendered[1][1]['message']);
         $this->assertSame([], $this->client->calls);
     }
 
@@ -440,7 +476,7 @@ class ActionControllerTest extends TestCase
     {
         $controller = $this->controller();
 
-        $this->assertSame(400, $controller->preview($this->previewRequest($this->user(), ['params' => $params])));
+        $this->assertSame(200, $controller->preview($this->previewRequest($this->user(), ['params' => $params])));
         $this->assertSame("The action's details couldn't be read.", $controller->rendered[0][1]['message']);
         $this->assertSame([], $this->client->calls);
     }
@@ -452,6 +488,7 @@ class ActionControllerTest extends TestCase
         FakeCache::$store[$this->cacheKey()] = ['sections' => []];
         $this->client->results[] = $this->realRun();
         $controller = $this->controller();
+        $this->previewed($controller);
 
         $response = $controller->run($this->runRequest($this->user()));
 
@@ -463,7 +500,7 @@ class ActionControllerTest extends TestCase
 
         $call = $this->client->calls[0][1];
         $this->assertFalse($call['dry_run']);
-        $this->assertSame(self::KEY, $call['key']);
+        $this->assertSame($this->previewKey, $call['key']);
 
         $this->assertCount(1, Thread::$created);
         [$data, $conversation, $customer] = Thread::$created[0];
@@ -492,8 +529,10 @@ class ActionControllerTest extends TestCase
             0,
             'Amounts differ: e-Transfer $300.00, order $325.00'
         );
+        $controller = $this->controller();
+        $this->previewed($controller);
 
-        $response = $this->controller()->run($this->runRequest($this->user()));
+        $response = $controller->run($this->runRequest($this->user()));
 
         $this->assertSame(
             ['status' => 'error', 'msg' => 'Amounts differ: e-Transfer $300.00, order $325.00'],
@@ -506,8 +545,10 @@ class ActionControllerTest extends TestCase
     public function test_run_timeout_is_a_plain_error_with_no_note(): void
     {
         $this->client->results[] = ClientResult::failure('timeout');
+        $controller = $this->controller();
+        $this->previewed($controller);
 
-        $response = $this->controller()->run($this->runRequest($this->user()));
+        $response = $controller->run($this->runRequest($this->user()));
 
         $this->assertSame(
             ['status' => 'error', 'msg' => "WordPress didn't answer within 15 seconds."],
@@ -520,12 +561,13 @@ class ActionControllerTest extends TestCase
     {
         $this->client->results = [$this->realRun(), $this->realRun(['replayed' => true])];
         $controller = $this->controller();
+        $this->previewed($controller);
 
         $first = $controller->run($this->runRequest($this->user()));
         $second = $controller->run($this->runRequest($this->user()));
 
-        $this->assertSame(self::KEY, $this->client->calls[0][1]['key']);
-        $this->assertSame(self::KEY, $this->client->calls[1][1]['key']);
+        $this->assertSame($this->previewKey, $this->client->calls[0][1]['key']);
+        $this->assertSame($this->previewKey, $this->client->calls[1][1]['key']);
         $this->assertSame('success', $this->json($first)['status']);
         $this->assertSame('success', $this->json($second)['status']);
         $this->assertCount(1, Thread::$created);
@@ -536,6 +578,7 @@ class ActionControllerTest extends TestCase
         // The first Run timed out after WordPress had finished; the retry is replayed.
         $this->client->results = [ClientResult::failure('timeout'), $this->realRun(['replayed' => true])];
         $controller = $this->controller();
+        $this->previewed($controller);
 
         $controller->run($this->runRequest($this->user()));
         $controller->run($this->runRequest($this->user()));
@@ -546,7 +589,9 @@ class ActionControllerTest extends TestCase
     public function test_run_maps_ticked_confirm_codes_into_params(): void
     {
         $this->client->results[] = $this->realRun();
-        $this->controller()->run($this->runRequest($this->user(), ['confirm' => ['amount_mismatch']]));
+        $controller = $this->controller();
+        $this->previewed($controller);
+        $controller->run($this->runRequest($this->user(), ['confirm' => ['amount_mismatch']]));
 
         $this->assertSame(
             ['log_id' => 12, 'order_id' => 5107, 'force_mismatch' => true],
@@ -557,7 +602,9 @@ class ActionControllerTest extends TestCase
     public function test_run_without_ticks_sends_the_params_unchanged(): void
     {
         $this->client->results[] = $this->realRun();
-        $this->controller()->run($this->runRequest($this->user()));
+        $controller = $this->controller();
+        $this->previewed($controller);
+        $controller->run($this->runRequest($this->user()));
 
         $this->assertSame(['log_id' => 12, 'order_id' => 5107], $this->client->calls[0][1]['params']);
     }
@@ -621,13 +668,158 @@ class ActionControllerTest extends TestCase
     {
         Thread::$failWith = new \RuntimeException('db down');
         $this->client->results[] = $this->realRun(['summary' => 'Done']);
+        $controller = $this->controller();
+        $this->previewed($controller);
 
-        $response = $this->controller()->run($this->runRequest($this->user()));
+        $response = $controller->run($this->runRequest($this->user()));
 
         $this->assertSame(
             ['status' => 'success', 'msg' => "Done The internal note couldn't be added."],
             $this->json($response)
         );
+    }
+
+    public function test_run_without_a_preview_is_refused(): void
+    {
+        $this->client->results[] = $this->realRun();
+
+        $response = $this->controller()->run($this->runRequest($this->user()));
+
+        $this->assertSame(409, $response->getStatusCode());
+        $this->assertSame(
+            ['status' => 'error', 'msg' => 'This preview has expired. Close the window and open the action again.'],
+            $this->json($response)
+        );
+        $this->assertSame([], $this->client->calls);
+        $this->assertSame([], Thread::$created);
+    }
+
+    /**
+     * @return array<string, array{0: array, 1: bool}>
+     */
+    public function mismatchedRuns(): array
+    {
+        return [
+            'other params' => [['params' => '{"log_id":12,"order_id":9999}'], false],
+            'other conversation' => [['conversation_id' => '78'], false],
+            'other action' => [['action' => 'unmatch'], false],
+            'other user' => [[], true],
+            'other key' => [['idempotency_key' => 'ffffffff-0000-1111-2222'], false],
+        ];
+    }
+
+    /**
+     * @dataProvider mismatchedRuns
+     */
+    public function test_run_that_differs_from_the_preview_is_refused(array $overrides, bool $otherUser): void
+    {
+        $this->client->results[] = $this->realRun();
+        $controller = $this->controller();
+        $this->previewed($controller);
+
+        $user = $otherUser ? $this->user(true, true, 9) : $this->user();
+        $response = $controller->run($this->runRequest($user, $overrides));
+
+        $this->assertSame(409, $response->getStatusCode());
+        $this->assertSame([], $this->client->calls);
+        $this->assertSame([], Thread::$created);
+    }
+
+    public function test_run_matches_the_preview_regardless_of_param_key_order(): void
+    {
+        $this->client->results[] = $this->realRun();
+        $controller = $this->controller();
+        $this->previewed($controller);
+
+        $response = $controller->run($this->runRequest($this->user(), ['params' => '{"order_id":5107,"log_id":12}']));
+
+        $this->assertSame('success', $this->json($response)['status']);
+    }
+
+    public function test_run_after_a_matching_preview_with_ticks_succeeds(): void
+    {
+        // Ticking amount_mismatch adds force_mismatch, which must not break the binding.
+        $this->client->results[] = $this->realRun();
+        $controller = $this->controller();
+        $this->previewed($controller);
+
+        $response = $controller->run($this->runRequest($this->user(), ['confirm' => ['amount_mismatch']]));
+
+        $this->assertSame('success', $this->json($response)['status']);
+        $this->assertCount(1, $this->client->calls);
+        $this->assertCount(1, Thread::$created);
+    }
+
+    public function test_a_failed_preview_binds_nothing(): void
+    {
+        $this->client->results = [ClientResult::failure('network')];
+        $controller = $this->controller();
+        $controller->preview($this->previewRequest($this->user()));
+        $this->previewKey = $this->client->calls[0][1]['key'];
+        $this->client->calls = [];
+
+        $response = $controller->run($this->runRequest($this->user()));
+
+        $this->assertSame(409, $response->getStatusCode());
+        $this->assertSame([], $this->client->calls);
+    }
+
+    public function test_run_answered_as_a_dry_run_is_an_error_without_a_note(): void
+    {
+        $this->client->results[] = $this->realRun(['dry_run' => true]);
+        $controller = $this->controller();
+        $this->previewed($controller);
+
+        $response = $controller->run($this->runRequest($this->user()));
+
+        $this->assertSame(
+            ['status' => 'error', 'msg' => "WordPress didn't run the action. Try again."],
+            $this->json($response)
+        );
+        $this->assertSame([], Thread::$created);
+    }
+
+    public function test_note_refused_by_freescout_is_reported_and_retried_on_replay(): void
+    {
+        Thread::$result = false;
+        $this->client->results = [$this->realRun(['summary' => 'Done']), $this->realRun(['replayed' => true])];
+        $controller = $this->controller();
+        $this->previewed($controller);
+
+        $response = $controller->run($this->runRequest($this->user()));
+        $this->assertSame("Done The internal note couldn't be added.", $this->json($response)['msg']);
+
+        // No "noted" marker was set, so the replayed retry writes the note.
+        Thread::$result = true;
+        $controller->run($this->runRequest($this->user()));
+        $this->assertCount(1, Thread::$created);
+    }
+
+    public function test_conversation_in_an_excluded_mailbox_is_refused(): void
+    {
+        $this->options->set('spatbridge.mailboxes', [5]);
+        $controller = $this->controller();
+
+        $controller->preview($this->previewRequest($this->user()));
+        $this->assertSame(
+            ['spatbridge::action.error', ['message' => "ARL League isn't turned on for this mailbox."], 200],
+            $controller->rendered[0]
+        );
+
+        $this->assertSame(403, $controller->run($this->runRequest($this->user()))->getStatusCode());
+        $this->assertSame(403, $controller->query($this->queryRequest($this->user()))->getStatusCode());
+        $this->assertSame([], $this->client->calls);
+    }
+
+    public function test_conversation_in_an_included_mailbox_is_allowed(): void
+    {
+        $this->options->set('spatbridge.mailboxes', ['5']);
+        $this->client->results[] = $this->dryRun();
+        $controller = $this->controller();
+
+        $controller->preview($this->previewRequest($this->user(), ['conversation_id' => '78']));
+
+        $this->assertSame('spatbridge::action.preview', $controller->rendered[0][0]);
     }
 
     // ---- query -----------------------------------------------------------
