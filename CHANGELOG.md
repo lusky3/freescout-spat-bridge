@@ -60,6 +60,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Event tags are applied only when the Tags module's `attachByName` /
+  `detachByName` have the expected static `(name, conversation id)`
+  signature; otherwise tags are skipped ("tag skipped" in the event log) and
+  a warning is logged.
 - An event of a type this version doesn't know is kept in the event log as
   "Ignored (event type not known to this version)" and answered 200, so
   WordPress doesn't drop it as failed; no note or ticket is made.

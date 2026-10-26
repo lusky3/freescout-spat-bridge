@@ -52,8 +52,8 @@ class SpatBridgeServiceProvider extends ServiceProvider
 
         $this->app->bind(EventStoreInterface::class, DatabaseEventStore::class);
 
-        $this->app->bind(TagService::class, function () {
-            return new TagService();
+        $this->app->bind(TagService::class, function ($app) {
+            return new TagService(null, TagService::TAG_CLASS, $app->make(LoggerInterface::class));
         });
 
         $this->commands([PruneEventsCommand::class]);
