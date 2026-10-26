@@ -53,6 +53,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - README: the install steps are the verified production runbook (release
   archive into `/data/Modules/SpatBridge`, ownership fix, enable and install
   as the web server user). Cloning is kept as a development install.
+- README: the end-to-end section lists the waitlist, Player card action and
+  WordPress event checks.
 
 ### Fixed
 
