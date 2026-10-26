@@ -171,8 +171,8 @@ The compose file uses throwaway credentials and is for local testing only.
 
 `e2e/run-e2e.sh` starts a real WordPress site (sportspress-sandbox with the
 SportsPress Admin Tools plugins) and a real FreeScout with this module, loads
-known player and e-Transfer fixtures, and checks through `php artisan tinker`
-that:
+known player, e-Transfer, waitlist and change-email fixtures, and checks
+through `php artisan tinker`, and `wp` on the WordPress side, that:
 
 - the connection test and the sidebar Player card work, including when
   WordPress is down;
@@ -181,13 +181,24 @@ that:
 - the match action previews first, asks for the amount-mismatch tick, runs
   once per idempotency key, and adds one internal note;
 - WordPress refuses an agent whose WordPress account lacks the capability,
-  and FreeScout refuses an agent the feature doesn't allow.
+  and FreeScout refuses an agent the feature doesn't allow;
+- the Waitlist panel shows the entries, and Offer, Withdraw offer, Remove and
+  Re-offer work, with each offer emailed once (WordPress captures the mail);
+- Change email refuses an address another login holds and an old address
+  that isn't the ticket's customer's, then changes the player, the login and
+  the order without an "email changed" notice;
+- Re-run registration reports the outcome WordPress gives;
+- events WordPress sends become one note each (a resent duplicate is
+  ignored), open a ticket without emailing the customer when the type's
+  create switch is on, and arrive on WordPress's retry after FreeScout was
+  down.
 
 Every artisan and tinker call runs as the PHP-FPM user (`www-data`), and the
 last check asserts that FreeScout's cache holds nothing owned by root. The
 script prints one `PASS` or `FAIL` line per check and exits non-zero on any
 failure. The action checks change WordPress data, so each run recreates the
-WordPress container.
+WordPress container. The sandbox turns WP-Cron off, so the script runs
+`wp cron event run --due-now` itself whenever events should go out.
 
 It expects
 [sportspress-sandbox](https://github.com/lusky3/sportspress-sandbox) and

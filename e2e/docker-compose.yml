@@ -38,7 +38,10 @@ services:
       - ${SPAT_PATH:-../../SportsPress-Admin-Tools}/sportspress-player-tools:/var/www/html/wp-content/plugins/sportspress-player-tools
       - ${SPAT_PATH:-../../SportsPress-Admin-Tools}/sportspress-schedule-generator:/var/www/html/wp-content/plugins/sportspress-schedule-generator
       - ${SPAT_PATH:-../../SportsPress-Admin-Tools}/sportspress-score-sheets:/var/www/html/wp-content/plugins/sportspress-score-sheets
-      - sp-baseline:/var/lib/baseline
+      # No volume for /var/lib/baseline: the sandbox's health endpoint says
+      # "ready" once baseline.sql exists, and run-e2e.sh recreates this
+      # container (and so its database) every run. A baseline kept from the
+      # last run would report ready before setup has run.
       - sp-screenshots:/screenshots
       - sp-test-results:/test-results
     tmpfs:
@@ -127,7 +130,6 @@ networks:
     driver: bridge
 
 volumes:
-  sp-baseline:
   sp-screenshots:
   sp-test-results:
   freescout-db-data:
