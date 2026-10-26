@@ -33,6 +33,15 @@ interface EventStoreInterface
     public function routedSince(string $type, array $outcomes, int $since): array;
 
     /**
+     * The newest $limit events, newest first, as rows with the keys `type`,
+     * `email`, `outcome`, `conversation_ids` (comma list), `detail` and
+     * `created_at` (Y-m-d H:i:s).
+     *
+     * @return array<int, array<string, string>>
+     */
+    public function latest(int $limit): array;
+
+    /**
      * Deletes events stored before $before (Unix time).
      *
      * @return int The number of rows deleted.

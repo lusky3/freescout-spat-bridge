@@ -53,6 +53,21 @@ class FakeEventStore implements EventStoreInterface
         return $this->routed;
     }
 
+    /** @var int[] The limits latest() was called with. */
+    public $latestLimits = [];
+
+    /** @var array<int, array> Log rows as the store returns them, keyed by id; the newest has the highest id. */
+    public $log = [];
+
+    public function latest(int $limit): array
+    {
+        $this->latestLimits[] = $limit;
+        $rows = $this->log;
+        krsort($rows);
+
+        return array_slice(array_values($rows), 0, $limit);
+    }
+
     public function prune(int $before): int
     {
         return 0;

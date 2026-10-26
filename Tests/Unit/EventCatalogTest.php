@@ -212,4 +212,26 @@ class EventCatalogTest extends TestCase
         $this->assertSame(200, mb_strlen($subject));
         $this->assertSame('Unmatched e-Transfer: éé', mb_substr($subject, 0, 24));
     }
+
+    public function test_every_type_has_a_label_and_an_unknown_type_falls_back_to_itself(): void
+    {
+        foreach ($this->catalog->types() as $type) {
+            $this->assertNotSame($type, $this->catalog->label($type));
+        }
+        $this->assertSame('e-Transfer unmatched', $this->catalog->label('etransfer.unmatched'));
+        $this->assertSame('mystery.type', $this->catalog->label('mystery.type'));
+    }
+
+    public function test_every_outcome_has_a_human_label(): void
+    {
+        $outcomes = [
+            'received', 'noted', 'noted_tag_skipped', 'created', 'created_tag_skipped',
+            'ignored', 'duplicate', 'duplicate_outcome', 'error',
+        ];
+        foreach ($outcomes as $outcome) {
+            $this->assertNotSame($outcome, $this->catalog->outcomeLabel($outcome));
+        }
+        $this->assertSame('Note added, tag skipped', $this->catalog->outcomeLabel('noted_tag_skipped'));
+        $this->assertSame('something_new', $this->catalog->outcomeLabel('something_new'));
+    }
 }

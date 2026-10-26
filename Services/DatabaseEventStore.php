@@ -73,6 +73,28 @@ class DatabaseEventStore implements EventStoreInterface
         return $data;
     }
 
+    public function latest(int $limit): array
+    {
+        $rows = \DB::table(self::TABLE)
+            ->orderBy('id', 'desc')
+            ->limit($limit)
+            ->get(['type', 'email', 'outcome', 'conversation_ids', 'detail', 'created_at']);
+
+        $events = [];
+        foreach ($rows as $row) {
+            $events[] = [
+                'type' => (string) $row->type,
+                'email' => (string) $row->email,
+                'outcome' => (string) $row->outcome,
+                'conversation_ids' => (string) $row->conversation_ids,
+                'detail' => (string) $row->detail,
+                'created_at' => (string) $row->created_at,
+            ];
+        }
+
+        return $events;
+    }
+
     public function prune(int $before): int
     {
         return (int) \DB::table(self::TABLE)->where('created_at', '<', date('Y-m-d H:i:s', $before))->delete();

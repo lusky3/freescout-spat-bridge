@@ -36,6 +36,30 @@ final class EventCatalog
         'waitlist.claimed' => 'waitlist.offered',
     ];
 
+    /** @var array<string, string> */
+    private const LABELS = [
+        'etransfer.unmatched' => 'e-Transfer unmatched',
+        'etransfer.matched' => 'e-Transfer matched',
+        'registration.incomplete' => 'Registration incomplete',
+        'registration.reversed' => 'Registration reversed',
+        'waitlist.offered' => 'Waitlist offer sent',
+        'waitlist.expired' => 'Waitlist offer expired',
+        'waitlist.claimed' => 'Waitlist offer claimed',
+    ];
+
+    /** @var array<string, string> */
+    private const OUTCOME_LABELS = [
+        'received' => 'Received, not yet routed',
+        'noted' => 'Note added',
+        'noted_tag_skipped' => 'Note added, tag skipped',
+        'created' => 'Ticket created',
+        'created_tag_skipped' => 'Ticket created, tag skipped',
+        'ignored' => 'Ignored (no open ticket)',
+        'duplicate' => 'Duplicate, already received',
+        'duplicate_outcome' => 'Repeat of a recent registration problem, not noted again',
+        'error' => 'Error',
+    ];
+
     /**
      * @return string[]
      */
@@ -55,6 +79,23 @@ final class EventCatalog
     public function defaultTag(string $type): ?array
     {
         return self::TAGS[$type] ?? null;
+    }
+
+    /**
+     * The name shown to admins for a type; an unknown type shows as itself.
+     */
+    public function label(string $type): string
+    {
+        return isset(self::LABELS[$type]) ? __(self::LABELS[$type]) : $type;
+    }
+
+    /**
+     * What happened to an event, in words, for the event log. An unknown
+     * outcome shows as itself.
+     */
+    public function outcomeLabel(string $outcome): string
+    {
+        return isset(self::OUTCOME_LABELS[$outcome]) ? __(self::OUTCOME_LABELS[$outcome]) : $outcome;
     }
 
     public function removesTagOf(string $type): ?string

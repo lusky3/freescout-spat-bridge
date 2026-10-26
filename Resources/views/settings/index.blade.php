@@ -153,6 +153,123 @@
         </div>
     </div>
 
+    <h4>4 &middot; {{ __('Events from WordPress') }} <small>{{ __('SPAT tells FreeScout when something changes') }}</small></h4>
+
+    <div class="form-group">
+        <label for="spatbridge_events_url" class="col-sm-3 control-label">{{ __('Webhook URL for WP') }}</label>
+        <div class="col-sm-6">
+            <div class="input-group">
+                <input type="text" id="spatbridge_events_url" class="form-control" readonly value="{{ $eventsUrl }}">
+                <span class="input-group-btn">
+                    <button type="button" id="spatbridge-copy-events-url" class="btn btn-default">{{ __('Copy') }}</button>
+                </span>
+            </div>
+            <span id="spatbridge-copy-result" role="status" aria-live="polite" class="text-success"></span>
+            <span class="help-block">{{ __('Paste into WordPress. Signed with the shared secret above.') }}</span>
+        </div>
+    </div>
+
+    <div class="form-group">
+        <label class="col-sm-3 control-label">{{ __('When an event matches a customer with an open ticket') }}</label>
+        <div class="col-sm-6">
+            <div class="checkbox">
+                <label>
+                    <input type="checkbox" name="events_notes" value="1" {{ $events['notes'] ? 'checked' : '' }}>
+                    {{ __('Add an internal note') }}
+                </label>
+            </div>
+            <div class="checkbox">
+                <label>
+                    <input type="checkbox" name="events_tags" value="1" {{ $events['tags'] ? 'checked' : '' }}>
+                    {{ __('Apply a tag') }}
+                </label>
+            </div>
+            @if (!$events['tagsAvailable'])
+                <p class="text-warning">{{ __('Tags module not active — tags will be skipped.') }}</p>
+            @endif
+        </div>
+    </div>
+
+    <table class="table table-condensed">
+        <thead>
+            <tr>
+                <th>{{ __('Event') }}</th>
+                <th>{{ __('Tag') }}</th>
+                <th>{{ __('No open ticket → create one?') }}</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach ($events['types'] as $type)
+                <tr class="{{ $errors->has('event_tag.' . $type['key']) ? 'has-error' : '' }}">
+                    <td>{{ $type['label'] }}</td>
+                    <td>
+                        <input type="text" name="event_tag[{{ $type['key'] }}]" class="form-control input-sm" maxlength="100"
+                               value="{{ old('event_tag.' . $type['key'], $type['tag']) }}"
+                               aria-label="{{ __('Tag for :event', ['event' => $type['label']]) }}">
+                        @if ($errors->has('event_tag.' . $type['key']))
+                            <span class="help-block">{{ $errors->first('event_tag.' . $type['key']) }}</span>
+                        @endif
+                    </td>
+                    <td>
+                        <input type="checkbox" name="event_create[{{ $type['key'] }}]" value="1"
+                               aria-label="{{ __('Create a ticket for :event when there is no open ticket', ['event' => $type['label']]) }}"
+                               {{ $type['create'] ? 'checked' : '' }}>
+                    </td>
+                </tr>
+            @endforeach
+        </tbody>
+    </table>
+    <p class="help-block">{{ __('Leave a tag empty to apply none. Matched, expired and claimed events remove the tag their opening event adds.') }}</p>
+    <p class="help-block">{{ __('An event with no email creates a ticket for a customer with no email address (named after the sender).') }}</p>
+
+    <div class="form-group {{ $errors->has('events_mailbox_id') ? 'has-error' : '' }}">
+        <label for="spatbridge_events_mailbox_id" class="col-sm-3 control-label">{{ __('New tickets go to') }}</label>
+        <div class="col-sm-6">
+            <select id="spatbridge_events_mailbox_id" name="events_mailbox_id" class="form-control">
+                <option value="">{{ __('Choose a mailbox') }}</option>
+                @foreach ($mailboxes as $mailbox)
+                    <option value="{{ $mailbox['id'] }}" {{ (int) old('events_mailbox_id', $events['mailboxId']) === $mailbox['id'] ? 'selected' : '' }}>{{ $mailbox['name'] }}</option>
+                @endforeach
+            </select>
+            <span class="help-block">{{ __('Required when any create switch is on. Nothing is emailed to the customer unless an agent replies.') }}</span>
+            @if ($errors->has('events_mailbox_id'))
+                <span class="help-block">{{ $errors->first('events_mailbox_id') }}</span>
+            @endif
+        </div>
+    </div>
+
+    <div class="form-group {{ $errors->has('events_note_user_id') ? 'has-error' : '' }}">
+        <label for="spatbridge_events_note_user_id" class="col-sm-3 control-label">{{ __('Post notes as') }}</label>
+        <div class="col-sm-6">
+            <select id="spatbridge_events_note_user_id" name="events_note_user_id" class="form-control">
+                <option value="0">{{ __('First active admin') }}</option>
+                @foreach ($users as $user)
+                    <option value="{{ $user['id'] }}" {{ (int) old('events_note_user_id', $events['noteUserId']) === $user['id'] ? 'selected' : '' }}>{{ $user['name'] }}</option>
+                @endforeach
+            </select>
+            @if ($errors->has('events_note_user_id'))
+                <span class="help-block">{{ $errors->first('events_note_user_id') }}</span>
+            @endif
+        </div>
+    </div>
+
+    <p class="help-block">{{ __('Tags are ordinary FreeScout tags, so your existing Workflows rules can act on them.') }}</p>
+
+    <div class="form-group">
+        <label class="col-sm-3 control-label">{{ __('Last event received') }}</label>
+        <div class="col-sm-6">
+            <p class="form-control-static">
+                @if ($events['lastEvent'])
+                    {{ $events['lastEvent']['time'] }}
+                    <span class="text-muted">&middot; {{ $events['lastEvent']['type'] }} &middot; {{ $events['lastEvent']['email'] }} &middot; {{ $events['lastEvent']['outcome'] }}</span>
+                @else
+                    <span class="text-muted">{{ __('None yet') }}</span>
+                @endif
+                &middot; <a href="{{ route('spatbridge.events.log') }}">{{ __('view log') }}</a>
+            </p>
+        </div>
+    </div>
+
     <div class="form-group">
         <div class="col-sm-offset-3 col-sm-9">
             <button type="submit" class="btn btn-primary">{{ __('Save') }}</button>
@@ -169,6 +286,22 @@
 
         document.getElementById('spatbridge_show_secret').addEventListener('change', function () {
             secret.type = this.checked ? 'text' : 'password';
+        });
+
+        var copyBtn = document.getElementById('spatbridge-copy-events-url');
+        var copyOut = document.getElementById('spatbridge-copy-result');
+        copyBtn.addEventListener('click', function () {
+            var field = document.getElementById('spatbridge_events_url');
+            var done = function () { copyOut.textContent = '✓ {{ __('Copied') }}'; };
+            field.focus();
+            field.select();
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(field.value).then(done, function () {
+                    copyOut.textContent = '{{ __('Press Ctrl+C to copy.') }}';
+                });
+            } else {
+                try { document.execCommand('copy'); done(); } catch (e) { copyOut.textContent = '{{ __('Press Ctrl+C to copy.') }}'; }
+            }
         });
 
         function paintWpSide(providers) {

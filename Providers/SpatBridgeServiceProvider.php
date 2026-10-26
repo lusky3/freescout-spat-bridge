@@ -11,6 +11,8 @@ use Modules\SpatBridge\Features\PlayerCard\PlayerCardFeature;
 use Modules\SpatBridge\Services\ActionPermissions;
 use Modules\SpatBridge\Services\ClientResult;
 use Modules\SpatBridge\Services\DatabaseEventStore;
+use Modules\SpatBridge\Services\EventCatalog;
+use Modules\SpatBridge\Services\EventSettings;
 use Modules\SpatBridge\Services\EventStoreInterface;
 use Modules\SpatBridge\Services\MailboxScope;
 use Modules\SpatBridge\Services\SidebarBuilder;
@@ -138,6 +140,14 @@ class SpatBridgeServiceProvider extends ServiceProvider
             $view->with('selectedMailboxes', is_array($selected) ? array_map('intval', $selected) : []);
             $view->with('features', array_values($features));
             $view->with('featureOrder', $featureOrder);
+
+            $view->with('eventsUrl', route('spatbridge.events'));
+            $view->with('events', (new EventSettings(
+                $options,
+                new EventCatalog(),
+                $this->app->make(TagService::class),
+                $this->app->make(EventStoreInterface::class)
+            ))->build());
         });
     }
 

@@ -13,6 +13,8 @@ use Modules\SpatBridge\Features\FeatureRegistry;
 use Modules\SpatBridge\Features\Panel;
 use Modules\SpatBridge\Http\Controllers\SpatBridgeSettingsController;
 use Modules\SpatBridge\Services\ClientResult;
+use Modules\SpatBridge\Services\MailboxLookup;
+use Modules\SpatBridge\Services\Support\OptionBool;
 use Modules\SpatBridge\Services\SpatClient;
 use PHPUnit\Framework\TestCase;
 use Tests\Support\FakeOptionStore;
@@ -116,7 +118,14 @@ class SpatBridgeSettingsControllerTest extends TestCase
 
     private function controller(FakeOptionStore $store): SpatBridgeSettingsController
     {
-        return new SpatBridgeSettingsController($store, $this->registry());
+        $lookup = new class extends MailboxLookup {
+            public function exists(int $id): bool
+            {
+                return in_array($id, [3, 5], true);
+            }
+        };
+
+        return new SpatBridgeSettingsController($store, $this->registry(), $lookup);
     }
 
     private function store(): FakeOptionStore
@@ -342,6 +351,127 @@ class SpatBridgeSettingsControllerTest extends TestCase
             }
         }
         $this->assertNull($store->get('spatbridge.features.player_card.actors'));
+    }
+
+    private function assertRejected(FakeOptionStore $store, array $post, string $field): void
+    {
+        try {
+            $this->controller($store)->save($this->request($post));
+            $this->fail('Expected a ValidationException.');
+        } catch (ValidationException $e) {
+            $this->assertArrayHasKey($field, $e->validator->errors()->toArray());
+        }
+    }
+
+    public function test_event_switches_tags_mailbox_and_note_user_are_saved(): void
+    {
+        $store = $this->store();
+
+        $this->controller($store)->save($this->request([
+            'events_notes' => '1',
+            'event_tag' => [
+                'etransfer_unmatched' => '  unpaid-transfer ',
+                'registration_incomplete' => '',
+                'waitlist_offered' => 'offer sent',
+            ],
+            'event_create' => ['etransfer_unmatched' => '1', 'waitlist_expired' => '1'],
+            'events_mailbox_id' => '5',
+            'events_note_user_id' => '7',
+        ]));
+
+        $this->assertTrue($store->get('spatbridge.events.notes'));
+        $this->assertFalse($store->get('spatbridge.events.tags'));
+        $this->assertSame('unpaid-transfer', $store->get('spatbridge.events.etransfer.unmatched.tag'));
+        $this->assertSame('', $store->get('spatbridge.events.registration.incomplete.tag'));
+        $this->assertSame('offer sent', $store->get('spatbridge.events.waitlist.offered.tag'));
+        $this->assertTrue($store->get('spatbridge.events.etransfer.unmatched.create'));
+        $this->assertTrue($store->get('spatbridge.events.waitlist.expired.create'));
+        $this->assertFalse($store->get('spatbridge.events.etransfer.matched.create'));
+        $this->assertSame(5, $store->get('spatbridge.events.mailbox_id'));
+        $this->assertSame(7, $store->get('spatbridge.events.note_user_id'));
+    }
+
+    public function test_event_settings_round_trip_through_the_router_reads(): void
+    {
+        $store = $this->store();
+
+        $this->controller($store)->save($this->request([
+            'events_notes' => '1',
+            'events_tags' => '1',
+            'event_create' => ['etransfer_unmatched' => '1'],
+            'events_mailbox_id' => '3',
+        ]));
+
+        $read = function (string $key, bool $default) use ($store): bool {
+            return OptionBool::from($store->get($key), $default);
+        };
+        $this->assertTrue($read('spatbridge.events.notes', false));
+        $this->assertTrue($read('spatbridge.events.etransfer.unmatched.create', false));
+        $this->assertFalse($read('spatbridge.events.waitlist.offered.create', true));
+    }
+
+    public function test_note_user_defaults_to_the_first_admin_when_blank(): void
+    {
+        $store = $this->store();
+
+        $this->controller($store)->save($this->request(['events_note_user_id' => '']));
+
+        $this->assertSame(0, $store->get('spatbridge.events.note_user_id'));
+    }
+
+    public function test_a_create_switch_needs_a_real_mailbox(): void
+    {
+        $store = $this->store();
+
+        $this->assertRejected($store, ['event_create' => ['etransfer_unmatched' => '1']], 'events_mailbox_id');
+        $this->assertRejected($store, [
+            'event_create' => ['etransfer_unmatched' => '1'],
+            'events_mailbox_id' => '99',
+        ], 'events_mailbox_id');
+        $this->assertRejected($store, ['events_mailbox_id' => '99'], 'events_mailbox_id');
+        $this->assertSame('https://old.example.com', $store->get('spatbridge.wp_base_url'));
+        $this->assertNull($store->get('spatbridge.events.mailbox_id'));
+    }
+
+    public function test_no_mailbox_is_fine_when_no_create_switch_is_on(): void
+    {
+        $store = $this->store();
+
+        $this->controller($store)->save($this->request(['events_mailbox_id' => '']));
+
+        $this->assertSame(0, $store->get('spatbridge.events.mailbox_id'));
+    }
+
+    public function test_tags_are_limited_to_100_word_characters_dashes_and_spaces(): void
+    {
+        $store = $this->store();
+
+        $field = 'event_tag.etransfer_unmatched';
+        $this->assertRejected($store, ['event_tag' => ['etransfer_unmatched' => str_repeat('a', 101)]], $field);
+        $this->assertRejected($store, ['event_tag' => ['etransfer_unmatched' => 'bad,tag']], $field);
+        $html = ['event_tag' => ['waitlist_offered' => '<b>x</b>']];
+        $this->assertRejected($store, $html, 'event_tag.waitlist_offered');
+        $this->assertNull($store->get('spatbridge.events.waitlist.offered.tag'));
+        $this->assertNull($store->get('spatbridge.events.etransfer.unmatched.tag'));
+
+        $this->controller($store)->save($this->request(['event_tag' => [
+            'etransfer_unmatched' => str_repeat('a', 100),
+            'waitlist_offered' => 'a-b c_d',
+        ]]));
+        $this->assertSame(str_repeat('a', 100), $store->get('spatbridge.events.etransfer.unmatched.tag'));
+    }
+
+    public function test_unknown_event_types_are_ignored(): void
+    {
+        $store = $this->store();
+
+        $this->controller($store)->save($this->request([
+            'event_tag' => ['bogus_type' => 'x'],
+            'event_create' => ['bogus_type' => '1'],
+        ]));
+
+        $this->assertNull($store->get('spatbridge.events.bogus.type.tag'));
+        $this->assertNull($store->get('spatbridge.events.bogus_type.tag'));
     }
 
     public function test_connection_test_reports_success_with_version_and_providers(): void

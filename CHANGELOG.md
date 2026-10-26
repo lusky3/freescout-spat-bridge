@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- "Events from WordPress" settings section (webhook URL with a copy button, note
+  and tag switches, a tag and create switch per event, mailbox for new tickets,
+  "Post notes as") and an admin-only event log page at
+  `/app-settings/spatbridge/events`.
 - Module scaffold: `module.json`, service provider skeleton, option store,
   PHPUnit/PHPCS harness, CI workflows and the Docker dev environment.
 - Feature contract, `Panel`/`PanelRow` model and `FeatureRegistry` with

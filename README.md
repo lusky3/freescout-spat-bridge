@@ -97,6 +97,28 @@ the sidebar then shows nothing.
    connection**. The test names the problem in plain words if the secret is
    wrong, missing on the WordPress side, or the clocks are out of step.
 
+### Events from WordPress
+
+The module can receive signed events from WordPress (unmatched e-Transfers,
+incomplete registrations, waitlist offers) and turn them into internal notes,
+tags and, optionally, new tickets. It never emails the customer.
+
+1. Under **Manage → Settings → ARL League**, section **Events from
+   WordPress**, copy the **Webhook URL for WP**.
+2. In WordPress, under SportsPress Admin Tools → FreeScout, paste it into the
+   SPAT events URL field and enable events. WordPress signs each event with
+   the shared secret.
+3. Choose the notes, tags, per-event tags and create switches, the mailbox for
+   new tickets and who notes are posted as, then save.
+
+Recent events, and what the module did with each, are listed at
+`/app-settings/spatbridge/events` (admins only), linked from **Last event
+received**.
+
+Existing installs: events are stored in a new `spatbridge_events` table. Run
+`php artisan migrate` as the web server user, or the module install command
+from step 5, to create it.
+
 To check the install, `php artisan module:list` shows ARL League as Enabled,
 and `https://<helpdesk>/modules/spatbridge/js/sidebar.js` returns 200. The
 module survives restarts and redeploys as long as the `/data` and `/www/html`

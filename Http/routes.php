@@ -15,6 +15,10 @@ Route::group([
     Route::post('/app-settings/spatbridge/test', [
         'uses' => 'SpatBridgeSettingsController@test',
     ])->name('spatbridge_test_connection');
+
+    Route::get('/app-settings/spatbridge/events', [
+        'uses' => 'EventLogController@index',
+    ])->name('spatbridge.events.log');
 });
 
 Route::group([
