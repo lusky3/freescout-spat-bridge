@@ -4,6 +4,7 @@ namespace Tests\Unit;
 
 use Modules\SpatBridge\Http\Controllers\EventLogController;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\Test\TestLogger;
 use Tests\Support\FakeEventStore;
 
 class EventLogTest extends TestCase
@@ -77,9 +78,15 @@ class EventLogTest extends TestCase
         $store = new FakeEventStore();
         $store->latestFails = new \RuntimeException('no such table');
 
-        $data = (new EventLogController($store))->data();
+        $logger = new TestLogger();
+
+        $data = (new EventLogController($store, null, $logger))->data();
 
         $this->assertSame(['events' => [], 'tableMissing' => true], $data);
+        // Logged, so a database outage isn't mistaken for a missing migration.
+        $this->assertTrue($logger->hasWarningThatContains('no such table'));
+        $this->assertSame('event log', $logger->records[0]['context']['page']);
+        $this->assertSame(\RuntimeException::class, $logger->records[0]['context']['exception_class']);
     }
 
     public function test_a_working_store_is_not_flagged(): void

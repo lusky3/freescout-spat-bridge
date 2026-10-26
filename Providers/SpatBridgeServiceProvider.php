@@ -152,7 +152,8 @@ class SpatBridgeServiceProvider extends ServiceProvider
                 $options,
                 new EventCatalog(),
                 $this->app->make(TagService::class),
-                $this->app->make(EventStoreInterface::class)
+                $this->app->make(EventStoreInterface::class),
+                $this->app->make(LoggerInterface::class)
             ))->build());
         });
     }

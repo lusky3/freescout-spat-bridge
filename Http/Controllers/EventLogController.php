@@ -5,6 +5,8 @@ namespace Modules\SpatBridge\Http\Controllers;
 use App\Http\Controllers\Controller;
 use Modules\SpatBridge\Services\EventCatalog;
 use Modules\SpatBridge\Services\EventStoreInterface;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 
 /**
  * Admin-only page listing the latest events received from WordPress.
@@ -17,11 +19,17 @@ class EventLogController extends Controller
     private $store;
     /** @var EventCatalog */
     private $catalog;
+    /** @var LoggerInterface */
+    private $logger;
 
-    public function __construct(EventStoreInterface $store, ?EventCatalog $catalog = null)
-    {
+    public function __construct(
+        EventStoreInterface $store,
+        ?EventCatalog $catalog = null,
+        ?LoggerInterface $logger = null
+    ) {
         $this->store = $store;
         $this->catalog = $catalog ?? new EventCatalog();
+        $this->logger = $logger ?? new NullLogger();
     }
 
     public function index()
@@ -40,6 +48,13 @@ class EventLogController extends Controller
         try {
             return ['events' => $this->rows(), 'tableMissing' => false];
         } catch (\Throwable $e) {
+            // Logged: the notice says "run the migration", but this may be
+            // a database outage instead.
+            $this->logger->warning('[SpatBridge] reading the event log failed: ' . $e->getMessage(), [
+                'page' => 'event log',
+                'exception_class' => get_class($e),
+            ]);
+
             return ['events' => [], 'tableMissing' => true];
         }
     }

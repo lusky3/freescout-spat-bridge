@@ -6,6 +6,7 @@ use Modules\SpatBridge\Services\EventCatalog;
 use Modules\SpatBridge\Services\EventSettings;
 use Modules\SpatBridge\Services\TagService;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\Test\TestLogger;
 use Tests\Support\FakeEventStore;
 use Tests\Support\FakeOptionStore;
 use Tests\Support\FakeTag;
@@ -16,11 +17,14 @@ class EventSettingsTest extends TestCase
     private $options;
     /** @var FakeEventStore */
     private $store;
+    /** @var TestLogger */
+    private $logger;
 
     protected function setUp(): void
     {
         $this->options = new FakeOptionStore();
         $this->store = new FakeEventStore();
+        $this->logger = new TestLogger();
     }
 
     private function settings(bool $tagsActive = true): EventSettings
@@ -29,7 +33,7 @@ class EventSettingsTest extends TestCase
             return $tagsActive;
         }, FakeTag::class);
 
-        return new EventSettings($this->options, new EventCatalog(), $tags, $this->store);
+        return new EventSettings($this->options, new EventCatalog(), $tags, $this->store, $this->logger);
     }
 
     private function type(array $model, string $type): array
@@ -96,6 +100,7 @@ class EventSettingsTest extends TestCase
         $this->assertNull($model['lastEvent']);
         $this->assertTrue($model['tableMissing']);
         $this->assertCount(7, $model['types']);
+        $this->assertTrue($this->logger->hasWarningThatContains('no such table: spatbridge_events'));
     }
 
     public function test_resolution_events_cannot_create_and_read_back_as_off(): void

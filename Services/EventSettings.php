@@ -4,6 +4,8 @@ namespace Modules\SpatBridge\Services;
 
 use Modules\SpatBridge\Services\Support\OptionBool;
 use Modules\SpatBridge\Services\Support\OptionStoreInterface;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 
 /**
  * What the "Events from WordPress" settings section shows. Defaults mirror
@@ -19,17 +21,21 @@ class EventSettings
     private $tags;
     /** @var EventStoreInterface */
     private $store;
+    /** @var LoggerInterface */
+    private $logger;
 
     public function __construct(
         OptionStoreInterface $options,
         EventCatalog $catalog,
         TagService $tags,
-        EventStoreInterface $store
+        EventStoreInterface $store,
+        ?LoggerInterface $logger = null
     ) {
         $this->options = $options;
         $this->catalog = $catalog;
         $this->tags = $tags;
         $this->store = $store;
+        $this->logger = $logger ?? new NullLogger();
     }
 
     /**
@@ -100,7 +106,12 @@ class EventSettings
         try {
             $rows = $this->store->latest(1);
         } catch (\Throwable $e) {
-            // Typically an upgraded install that hasn't run the migration.
+            // Typically an upgraded install that hasn't run the migration;
+            // logged in case it's a database outage instead.
+            $this->logger->warning('[SpatBridge] reading the last event failed: ' . $e->getMessage(), [
+                'page' => 'settings',
+                'exception_class' => get_class($e),
+            ]);
             $tableMissing = true;
 
             return null;
