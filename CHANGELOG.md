@@ -29,6 +29,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Release workflow and release guard: a release needs a version bump and a
   changelog entry, and PRs that change shipped files need a changelog entry.
 
+### Changed
+
+- README: the install steps are the verified production runbook (release
+  archive into `/data/Modules/SpatBridge`, ownership fix, enable and install
+  as the web server user). Cloning is kept as a development install.
+
 ### Fixed
 
 - The settings page script carries FreeScout's CSP nonce and has no inline

@@ -97,8 +97,10 @@ services:
     working_dir: /var/www/html
     # public/css/builds and public/js/builds hold FreeScout's minified asset
     # bundles, written on first page load; unwritable, the UI renders unstyled
-    # and without JS for a human using this stack.
-    command: ["sh", "-c", "mkdir -p public/css/builds public/js/builds; chmod -R 777 storage bootstrap/cache public/css/builds public/js/builds 2>/dev/null; php-fpm"]
+    # and without JS for a human using this stack. public/modules takes the
+    # module's symlink, which run-e2e.sh creates as www-data. The chown hands
+    # back cache directories an older run-e2e.sh created as root.
+    command: ["sh", "-c", "mkdir -p public/css/builds public/js/builds; chmod -R 777 storage bootstrap/cache public/css/builds public/js/builds public/modules 2>/dev/null; chown -R www-data:www-data storage/framework/cache; php-fpm"]
     depends_on:
       freescout-db:
         condition: service_healthy
