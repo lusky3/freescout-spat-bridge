@@ -117,3 +117,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   name.
 - The tabbed sidebar layout keeps its tab labels on one line ("Waitlist" no
   longer wraps at the default sidebar width).
+- The settings page's "Events table missing" hint now says to run
+  `php artisan freescout:module-install spatbridge` as the web server user;
+  plain `php artisan migrate` is cancelled in production.

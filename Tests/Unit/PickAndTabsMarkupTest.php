@@ -42,4 +42,13 @@ class PickAndTabsMarkupTest extends TestCase
 
         $this->assertMatchesRegularExpression('/<a [^>]*class="spatbridge-tab"[^>]*style="[^"]*white-space:\s*nowrap/', $view);
     }
+
+    public function test_the_missing_table_hint_points_at_module_install_not_plain_migrate(): void
+    {
+        $view = $this->source('Resources/views/settings/index.blade.php');
+
+        $this->assertStringContainsString('php artisan freescout:module-install spatbridge', $view);
+        $this->assertStringContainsString('as the web server user', $view);
+        $this->assertStringNotContainsString('`php artisan migrate`', $view);
+    }
 }

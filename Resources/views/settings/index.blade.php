@@ -270,7 +270,7 @@
         <div class="col-sm-6">
             <p class="form-control-static">
                 @if ($events['tableMissing'])
-                    <span class="text-warning">{{ __('Events table missing — run `php artisan migrate` (or reinstall the module).') }}</span>
+                    <span class="text-warning">{{ __('Events table missing — run `php artisan freescout:module-install spatbridge` as the web server user.') }}</span>
                 @elseif ($events['lastEvent'])
                     {{ $events['lastEvent']['time'] }}
                     <span class="text-muted">&middot; {{ $events['lastEvent']['type'] }} &middot; {{ $events['lastEvent']['email'] }} &middot; {{ $events['lastEvent']['outcome'] }}</span>
