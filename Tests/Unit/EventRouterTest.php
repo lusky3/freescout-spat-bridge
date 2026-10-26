@@ -240,9 +240,33 @@ class EventRouterTest extends TestCase
         $result = $router->route($this->event());
 
         // No note means no note user is needed either.
-        $this->assertSame('noted', $result['outcome']);
+        $this->assertSame(['outcome' => 'tagged', 'conversation_ids' => [11], 'detail' => ''], $result);
         $this->assertSame([], Thread::$created);
         $this->assertSame([['attach', 'payment-unmatched', 11]], FakeTag::$calls);
+    }
+
+    public function test_notes_off_with_tags_unavailable_is_tag_skipped(): void
+    {
+        $this->options->set('spatbridge.events.notes', '0');
+        $this->tagsActive = false;
+        $router = $this->router([self::EMAIL => [$this->conversation(11, 3)]]);
+
+        $this->assertSame('tag_skipped', $router->route($this->event())['outcome']);
+        $this->assertSame([], Thread::$created);
+    }
+
+    public function test_notes_and_tags_both_off_logs_that_nothing_was_done(): void
+    {
+        $this->options->set('spatbridge.events.notes', '0');
+        $this->options->set('spatbridge.events.tags', '0');
+        $router = $this->router([self::EMAIL => [$this->conversation(11, 3)]], [], null);
+
+        $result = $router->route($this->event());
+
+        $this->assertSame(['outcome' => 'notes_tags_off', 'conversation_ids' => [11], 'detail' => ''], $result);
+        $this->assertNotSame('Note added', (new EventCatalog())->outcomeLabel($result['outcome']));
+        $this->assertSame([], Thread::$created);
+        $this->assertSame([], FakeTag::$calls);
     }
 
     public function test_tags_unavailable_is_noted_tag_skipped(): void

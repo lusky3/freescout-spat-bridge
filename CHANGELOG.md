@@ -60,6 +60,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The event log no longer says "Note added" when event notes are switched
+  off: it records "Tag updated, no note", "Tag skipped, no note" or, with
+  notes and tags both off, "Nothing done".
 - An action counts as done only when WordPress answers `success: true`; any
   other answer is shown as an error and adds no internal note.
 - After Change email, the internal note says the ARL League card follows the

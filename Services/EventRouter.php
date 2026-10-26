@@ -15,6 +15,9 @@ class EventRouter
 {
     public const NOTED = 'noted';
     public const NOTED_TAG_SKIPPED = 'noted_tag_skipped';
+    public const TAGGED = 'tagged';
+    public const TAG_SKIPPED = 'tag_skipped';
+    public const NOTES_TAGS_OFF = 'notes_tags_off';
     public const CREATED = 'created';
     public const CREATED_TAG_SKIPPED = 'created_tag_skipped';
     public const IGNORED = 'ignored';
@@ -106,6 +109,13 @@ class EventRouter
     private function noteAll(array $event, array $conversations): array
     {
         $notesOn = $this->bool('spatbridge.events.notes', true);
+        if (!$notesOn && !$this->bool('spatbridge.events.tags', true)) {
+            $ids = array_map(function ($conversation) {
+                return (int) $conversation->id;
+            }, $conversations);
+
+            return self::result(self::NOTES_TAGS_OFF, $ids);
+        }
         $user = null;
         if ($notesOn) {
             $user = $this->noteUser();
@@ -137,6 +147,10 @@ class EventRouter
         $detail = implode('; ', $failures);
         if ($ids === []) {
             return self::result(self::ERROR, [], $detail);
+        }
+
+        if (!$notesOn) {
+            return self::result($tagged ? self::TAGGED : self::TAG_SKIPPED, $ids, $detail);
         }
 
         return self::result($tagged ? self::NOTED : self::NOTED_TAG_SKIPPED, $ids, $detail);

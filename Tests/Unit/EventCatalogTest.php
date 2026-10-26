@@ -254,6 +254,7 @@ class EventCatalogTest extends TestCase
         $outcomes = [
             'received', 'noted', 'noted_tag_skipped', 'created', 'created_tag_skipped',
             'ignored', 'duplicate', 'duplicate_outcome', 'error',
+            'tagged', 'tag_skipped', 'notes_tags_off',
         ];
         foreach ($outcomes as $outcome) {
             $this->assertNotSame($outcome, $this->catalog->outcomeLabel($outcome));
