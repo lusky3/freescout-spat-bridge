@@ -32,10 +32,34 @@
 
     var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-    function formatDate(iso) {
+    /**
+     * "Oct 21" in the given IANA zone (the agent's FreeScout time zone, as the
+     * sidebar shows it), or in UTC when the zone is missing or unknown.
+     */
+    function formatDate(iso, zone) {
         var date = new Date(iso);
         if (typeof iso !== 'string' || isNaN(date.getTime())) {
             return '';
+        }
+        if (zone && window.Intl && Intl.DateTimeFormat) {
+            try {
+                var parts = new Intl.DateTimeFormat('en-US', { timeZone: zone, month: 'numeric', day: 'numeric' })
+                    .formatToParts(date);
+                var month = 0;
+                var day = 0;
+                parts.forEach(function (part) {
+                    if (part.type === 'month') {
+                        month = parseInt(part.value, 10);
+                    } else if (part.type === 'day') {
+                        day = parseInt(part.value, 10);
+                    }
+                });
+                if (month >= 1 && month <= 12 && day > 0) {
+                    return MONTHS[month - 1] + ' ' + day;
+                }
+            } catch (e) {
+                // Unknown zone: fall through to UTC.
+            }
         }
         return MONTHS[date.getUTCMonth()] + ' ' + date.getUTCDate();
     }
@@ -152,7 +176,7 @@
                 var from = text(result.from_name);
                 var reference = text(result.reference);
                 label.textContent = joined([
-                    formatDate(result.at),
+                    formatDate(result.at, pick.getAttribute('data-timezone')),
                     formatAmount(result.amount),
                     from,
                     reference === '' ? '' : 'ref ' + reference

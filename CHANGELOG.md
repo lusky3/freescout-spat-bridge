@@ -60,6 +60,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Sidebar dates (e-Transfers, waitlist) and the e-Transfer picker's results
+  are shown in the viewing agent's FreeScout time zone instead of UTC; the
+  waitlist offer deadline names its zone (e.g. "2:00 PM EDT"). Event notes
+  give the waitlist deadline in FreeScout's app time zone, named.
 - When a preview asked for from the Change email form, the waitlist Offer form
   or the e-Transfer picker is refused (for example, the email is already in
   use), the form stays open with the message in it, so the agent can correct

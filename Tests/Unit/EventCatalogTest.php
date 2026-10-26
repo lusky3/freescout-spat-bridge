@@ -157,6 +157,24 @@ class EventCatalogTest extends TestCase
         );
     }
 
+    public function test_waitlist_expiry_is_written_in_the_app_timezone_with_its_abbreviation(): void
+    {
+        $catalog = new EventCatalog(function () {
+            return new \DateTimeZone('America/Toronto');
+        });
+        $data = ['season' => 'S2026', 'position' => 'Goalie'];
+
+        $this->assertStringContainsString(
+            'expires Oct 27, 2:00 PM EDT.',
+            $catalog->noteHtml('waitlist.offered', $data + ['expires_at' => '2026-10-27T18:00:00Z'])
+        );
+        // A MySQL date without a zone is still read as UTC.
+        $this->assertStringContainsString(
+            'expires Dec 1, 1:00 PM EST.',
+            $catalog->noteHtml('waitlist.offered', $data + ['expires_at' => '2026-12-01 18:00:00'])
+        );
+    }
+
     public function test_waitlist_expiry_in_mysql_format_is_read_as_utc_and_unreadable_values_are_shown_raw(): void
     {
         $this->assertStringContainsString(

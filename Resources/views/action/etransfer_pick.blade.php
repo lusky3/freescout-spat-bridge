@@ -1,6 +1,7 @@
 {{-- AJAX-loaded into the action pop-up when a match still needs an order or a transfer; no inline script or handlers, Public/js/actions.js wires it up. --}}
 <div class="spatbridge-pick"
      data-mode="{{ $mode }}"
+     data-timezone="{{ $timezone ?? 'UTC' }}"
      data-preview-url="{{ route('spatbridge.action.preview') }}"
      data-feature="{{ $feature }}"
      data-action="{{ $action }}"

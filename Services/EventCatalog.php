@@ -2,6 +2,8 @@
 
 namespace Modules\SpatBridge\Services;
 
+use Modules\SpatBridge\Services\Support\Timezones;
+
 /**
  * The events WordPress sends: their types, default tag rules, and the copy
  * for the internal note and for the subject of a ticket the bridge creates.
@@ -12,6 +14,19 @@ final class EventCatalog
 {
     private const UNKNOWN_SENDER = 'Unknown sender';
     public const SUBJECT_MAX = 200;
+
+    /** @var callable(): \DateTimeZone */
+    private $timezone;
+
+    /**
+     * @param callable|null $timezone Returns the zone note dates are written
+     *        in; FreeScout's app time zone by default. A note is written once
+     *        for every agent, so it names its zone.
+     */
+    public function __construct(?callable $timezone = null)
+    {
+        $this->timezone = $timezone ?? [Timezones::class, 'app'];
+    }
 
     /** @var array<string, array{add?: string, remove?: string}> */
     private const TAGS = [
@@ -239,8 +254,9 @@ final class EventCatalog
     }
 
     /**
-     * "Oct 27, 6:00 PM UTC" from a Unix time or an ISO/MySQL date. A date
-     * without a zone is read as UTC; anything else is shown as sent.
+     * "Oct 27, 2:00 PM EDT" (app time zone, named) from a Unix time or an
+     * ISO/MySQL date. A date without a zone is read as UTC; anything else is
+     * shown as sent.
      */
     private function expiry(string $value): string
     {
@@ -255,7 +271,7 @@ final class EventCatalog
             return $value;
         }
 
-        return $date->setTimezone($utc)->format('M j, g:i A') . ' UTC';
+        return $date->setTimezone(($this->timezone)())->format('M j, g:i A T');
     }
 
     private function text(array $data, string $key): string

@@ -229,6 +229,26 @@ class ETransfersFeatureTest extends TestCase
         $this->assertSame('Oct 22 · $325.00', $row->title());
     }
 
+    public function test_dates_are_shown_in_the_viewing_agents_timezone(): void
+    {
+        $feature = new ETransfersFeature(function () {
+            return new \DateTimeZone('America/Toronto');
+        });
+        // 02:30 UTC on Oct 21 is the evening of Oct 20 in Toronto.
+        $panel = $feature->present($this->sections(
+            [$this->transfer(['at' => '2026-10-21T02:30:00Z'])],
+            [$this->onHold(['possible_matches' => [[
+                'log_id' => 31, 'at' => '2026-10-21T03:00:00Z', 'amount' => '325', 'from_name' => 'Pat',
+            ]]])]
+        ));
+
+        $this->assertSame('Oct 20 · $325.00', $panel->rows()[0]->title());
+        $this->assertSame(['Possible match: Oct 20 · $325.00 from Pat'], $panel->rows()[1]->lines());
+        // The picker formats its search results in the same zone.
+        $pick = $feature->previewOverride('match', ['order_id' => 5107]);
+        $this->assertSame('America/Toronto', $pick['data']['timezone']);
+    }
+
     public function test_the_pick_view_is_used_when_only_one_id_is_known(): void
     {
         $feature = new ETransfersFeature();

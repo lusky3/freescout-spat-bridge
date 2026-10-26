@@ -6,6 +6,7 @@ use Modules\SpatBridge\Features\Feature;
 use Modules\SpatBridge\Features\Panel;
 use Modules\SpatBridge\Features\PanelRow;
 use Modules\SpatBridge\Features\RowAction;
+use Modules\SpatBridge\Services\Support\Timezones;
 
 /**
  * The customer's SportsPress waitlist entries, with Offer, Re-offer, Withdraw
@@ -20,6 +21,18 @@ final class WaitlistFeature implements Feature
     private const SEP = ' · ';
     private const OFFER_FORM_VIEW = 'spatbridge::action.waitlist_offer_form';
     private const DEFAULT_HOURS = 48;
+
+    /** @var callable(): \DateTimeZone */
+    private $timezone;
+
+    /**
+     * @param callable|null $timezone Returns the zone to show dates in; the
+     *        viewing agent's FreeScout time zone by default.
+     */
+    public function __construct(?callable $timezone = null)
+    {
+        $this->timezone = $timezone ?? [Timezones::class, 'agent'];
+    }
 
     public function key(): string
     {
@@ -242,13 +255,11 @@ final class WaitlistFeature implements Feature
     }
 
     /**
-     * WordPress sends UTC, so say so rather than let it read as local time.
+     * In the agent's zone, named (e.g. "EDT"), so it can't be misread.
      */
     private function dateTime(string $iso): string
     {
-        $formatted = $this->format($iso, 'M j, g:i A');
-
-        return $formatted === '' ? '' : $formatted . ' UTC';
+        return $this->format($iso, 'M j, g:i A T');
     }
 
     private function format(string $iso, string $format): string
@@ -258,7 +269,7 @@ final class WaitlistFeature implements Feature
         }
 
         try {
-            return (new \DateTimeImmutable($iso))->setTimezone(new \DateTimeZone('UTC'))->format($format);
+            return (new \DateTimeImmutable($iso))->setTimezone(($this->timezone)())->format($format);
         } catch (\Exception $e) {
             return '';
         }

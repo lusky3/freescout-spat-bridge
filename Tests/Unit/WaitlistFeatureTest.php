@@ -216,6 +216,23 @@ class WaitlistFeatureTest extends TestCase
         $this->assertFalse($panel->attention());
     }
 
+    public function test_dates_are_shown_in_the_viewing_agents_timezone_with_its_abbreviation(): void
+    {
+        $feature = new WaitlistFeature(function () {
+            return new \DateTimeZone('America/Toronto');
+        });
+        $panel = $feature->present(['waitlist' => ['entries' => [
+            $this->entry(['id' => 1, 'status' => 'queued', 'created_at' => '2026-08-04T02:00:00Z']),
+            $this->entry(['id' => 2, 'status' => 'offered', 'expires_at' => '2099-10-27T18:00:00Z']),
+        ]]]);
+
+        $this->assertSame('Offered S2026 Goalie, expires Oct 27, 2:00 PM EDT', $panel->summary());
+        $lines = array_merge(...array_map(function ($row) {
+            return $row->lines();
+        }, $panel->rows()));
+        $this->assertContains('On waitlist since Aug 3', $lines);
+    }
+
     public function test_summary_without_an_offer(): void
     {
         $panel = $this->present([$this->entry()]);

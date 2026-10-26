@@ -6,6 +6,7 @@ use Modules\SpatBridge\Features\Feature;
 use Modules\SpatBridge\Features\Panel;
 use Modules\SpatBridge\Features\PanelRow;
 use Modules\SpatBridge\Features\RowAction;
+use Modules\SpatBridge\Services\Support\Timezones;
 
 /**
  * e-Transfers sent from the customer's email, and their on-hold orders, with
@@ -18,6 +19,18 @@ final class ETransfersFeature implements Feature
 {
     private const SEP = ' · ';
     private const PICK_VIEW = 'spatbridge::action.etransfer_pick';
+
+    /** @var callable(): \DateTimeZone */
+    private $timezone;
+
+    /**
+     * @param callable|null $timezone Returns the zone to show dates in; the
+     *        viewing agent's FreeScout time zone by default.
+     */
+    public function __construct(?callable $timezone = null)
+    {
+        $this->timezone = $timezone ?? [Timezones::class, 'agent'];
+    }
 
     public function key(): string
     {
@@ -97,7 +110,10 @@ final class ETransfersFeature implements Feature
 
         // Mode names what the agent still has to pick: an order when only a
         // transfer is known, and the other way round.
-        return ['view' => self::PICK_VIEW, 'data' => ['mode' => $hasLog ? 'order' : 'transfer']];
+        return ['view' => self::PICK_VIEW, 'data' => [
+            'mode' => $hasLog ? 'order' : 'transfer',
+            'timezone' => $this->zone()->getName(),
+        ]];
     }
 
     public function mapConfirmCodes(string $action, array $codes, array $params): array
@@ -250,10 +266,15 @@ final class ETransfersFeature implements Feature
         }
 
         try {
-            return (new \DateTimeImmutable($iso))->setTimezone(new \DateTimeZone('UTC'))->format('M j');
+            return (new \DateTimeImmutable($iso))->setTimezone($this->zone())->format('M j');
         } catch (\Exception $e) {
             return '';
         }
+    }
+
+    private function zone(): \DateTimeZone
+    {
+        return ($this->timezone)();
     }
 
     /**
