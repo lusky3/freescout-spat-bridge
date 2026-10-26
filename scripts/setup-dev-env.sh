@@ -13,7 +13,7 @@ if [ ! -f freescout/.env ]; then
     sed -i 's/^DB_DATABASE=.*/DB_DATABASE=freescout/' freescout/.env
     sed -i 's/^DB_USERNAME=.*/DB_USERNAME=freescout/' freescout/.env
     sed -i 's/^DB_PASSWORD=.*/DB_PASSWORD=freescout/' freescout/.env
-    sed -i 's#^APP_URL=.*#APP_URL=http://localhost:8081#' freescout/.env
+    sed -i 's#^APP_URL=.*#APP_URL=http://localhost:8083#' freescout/.env
     echo 'APP_TRUSTED_HOSTS=localhost' >> freescout/.env
 fi
 
@@ -22,5 +22,5 @@ docker compose up -d
 docker compose exec app php artisan key:generate --force
 
 echo ""
-echo "FreeScout core is up. Finish setup by visiting http://localhost:8081/install in your browser."
+echo "FreeScout core is up. Finish setup by visiting http://localhost:8083/install in your browser."
 echo "DB connection inside the container: host=db user=freescout password=freescout database=freescout"

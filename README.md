@@ -34,6 +34,66 @@ plugins.
 - Network access from the FreeScout host to the WordPress site, and from
   the WordPress site to FreeScout for events.
 
+## Install
+
+1. Clone the repository into FreeScout's `Modules/` directory under the
+   name `SpatBridge`:
+
+   ```sh
+   git clone https://github.com/lusky3/freescout-spat-bridge.git Modules/SpatBridge
+   ```
+
+2. Restart FreeScout so it registers the module. In a Docker install, restart
+   the container.
+3. Under **Manage → Modules**, enable **ARL League**.
+4. Under **Manage → Settings → ARL League**, enter the WordPress site URL and
+   the shared secret, then press **Test connection**. The test names the
+   problem in plain words if the secret is wrong, missing on the WordPress
+   side, or the clocks are out of step.
+
+The shared secret must be at least 32 characters and must match the value on
+the WordPress side. Use a new secret for this module. Don't reuse the one from
+freescout-splm-waitlist.
+
+## Development
+
+`scripts/setup-dev-env.sh` starts a local FreeScout instance in `docker/` to
+test the module against. It clones FreeScout core into `docker/freescout`,
+creates its `.env`, and starts the containers. It needs Docker with the
+`docker compose` plugin, and git.
+
+```sh
+scripts/setup-dev-env.sh
+```
+
+When the script finishes, open <http://localhost:8083/install> to finish
+FreeScout's setup. The web server listens on port 8083 and MySQL on
+127.0.0.1:33063. The ports are chosen so this harness doesn't collide with the
+freescout-splm-waitlist harness, which uses 8081 and 33062.
+
+The compose file uses throwaway credentials and is for local testing only.
+
+## Releasing
+
+Releases are cut from `main`, and FreeScout's **Update Now** button uses them.
+
+Every PR that changes shipped code adds a line under `## [Unreleased]` in
+`CHANGELOG.md`. CI checks this. Files excluded from the release archive, such
+as tests, `docker/`, and `scripts/`, don't need an entry.
+
+To release version `X.Y.Z`:
+
+1. In a release PR, rename `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD`, add
+   a fresh empty `## [Unreleased]` above it, and set `version` in
+   `module.json` to `X.Y.Z`. The changelog check accepts this PR.
+2. Merge the PR into `main`.
+3. Tag `vX.Y.Z` on `main` and push the tag. The release workflow builds the
+   archive and `version.json`, then publishes them. It refuses a tag whose
+   version doesn't match `module.json`, has no changelog section, or isn't
+   newer than the previous release.
+4. Make the repository **public** before the first release. FreeScout's
+   Update Now can't download from a private repository.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
