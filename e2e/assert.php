@@ -206,17 +206,16 @@ $spatbridgeE2e = new class {
     }
 
     /**
-     * One step of a check that continues in a later phase: prints only a
-     * failure.
+     * One step of a check that continues in a later phase: prints
+     * `STEP <name>` on success, so run-e2e.sh can tell a step that passed
+     * from a phase that died before printing anything.
      *
      * @param callable $body returns '' on success, otherwise the failure detail
      */
     private function step(string $name, callable $body): void
     {
         $detail = $this->detailOf($body);
-        if ($detail !== '') {
-            echo 'FAIL ' . $name . ': ' . $this->oneLine($detail) . "\n";
-        }
+        echo ($detail === '' ? 'STEP ' . $name : 'FAIL ' . $name . ': ' . $this->oneLine($detail)) . "\n";
     }
 
     private function pingOk(): string
@@ -615,7 +614,7 @@ $spatbridgeE2e = new class {
         if ($this->idempotencyKey($html) !== '') {
             return 'nocap got a preview it may not run';
         }
-        $expected = ConnectionMessage::actionMessage($direct);
+        $expected = "Your WordPress account isn't allowed to do this.";
         if (strpos($this->plain($html), $expected) === false) {
             return 'the preview does not say "' . $expected . '"; rendered text: ' . $this->text($html);
         }
@@ -817,7 +816,7 @@ $spatbridgeE2e = new class {
         \DB::table('spatbridge_events')->where('email', self::NEW_PERSON_EMAIL)->delete();
 
         \Cache::forever(self::CACHE_PREFIX . 'max_conversation_id', (int) \App\Conversation::max('id'));
-        \Cache::forever(self::CACHE_PREFIX . 'reply_jobs', $this->replyJobCount());
+        \Cache::forever(self::CACHE_PREFIX . 'max_job_id', (int) \DB::table('jobs')->max('id'));
 
         return '';
     }
@@ -839,19 +838,117 @@ $spatbridgeE2e = new class {
             return 'expected one new conversation "' . $subject . '", found: ' . json_encode($created->pluck('subject')->all());
         }
 
-        $logged = $this->eventLogged($eventId, 'created_tag_skipped', (int) $created->first()->id);
+        $conversation = $created->first();
+        $logged = $this->eventLogged($eventId, 'created_tag_skipped', (int) $conversation->id);
         if ($logged !== '') {
             return $logged;
         }
 
-        // No customer email: nothing sent, nothing queued.
+        // No customer email. FreeScout only emails a customer for a message
+        // thread written by an agent: the ticket must hold the note and no
+        // such thread.
+        $threads = \App\Thread::where('conversation_id', $conversation->id)->get();
+        if ($threads->where('type', \App\Thread::TYPE_NOTE)->count() < 1) {
+            return 'the new ticket has no note thread: ' . json_encode($threads->pluck('type')->all());
+        }
+        $messages = $threads->filter(function ($thread) {
+            return (int) $thread->type === \App\Thread::TYPE_MESSAGE && $thread->created_by_user_id !== null;
+        });
+        if ($messages->count() !== 0) {
+            return 'the new ticket has ' . $messages->count() . ' agent message thread(s), which FreeScout would email';
+        }
+
+        // And nothing queued that could email the customer. No queue worker
+        // runs in e2e, so everything queued since the setup step is still in
+        // jobs. The control proves both queries see a matching row first.
+        $control = $this->jobsQueryControl();
+        if ($control !== '') {
+            return $control;
+        }
+        $queued = $this->queuedSince((int) \Cache::get(self::CACHE_PREFIX . 'max_job_id', 0), self::NEW_PERSON_EMAIL);
+        if ($queued['emails'] !== []) {
+            return 'new job(s) on the emails queue: ' . implode(', ', $queued['emails']);
+        }
+        if ($queued['unexpected'] !== []) {
+            return 'new job(s) naming ' . self::NEW_PERSON_EMAIL . ': ' . implode(', ', $queued['unexpected']);
+        }
+
+        // Secondary: nothing was sent either.
         $sent = \DB::table('send_logs')->where('email', self::NEW_PERSON_EMAIL)->count();
         if ($sent !== 0) {
             return $sent . ' send_logs rows for ' . self::NEW_PERSON_EMAIL;
         }
-        $jobs = $this->replyJobCount() - (int) \Cache::get(self::CACHE_PREFIX . 'reply_jobs', 0);
-        if ($jobs !== 0) {
-            return $jobs . ' new SendReplyToCustomer job(s) queued';
+
+        return '';
+    }
+
+    /**
+     * Jobs queued after job id $since, as "#id Class[ action]" labels:
+     * every job on FreeScout's `emails` queue (where all customer mail goes,
+     * e.g. SendReplyToCustomer, whose payload holds only model ids), and every
+     * other job whose payload contains $address, except the one FreeScout
+     * queues for any ticket a user opens: TriggerAction for the module hook
+     * `conversation.created_by_user`, which carries the conversation (so its
+     * customer_email) and sends nothing in core.
+     *
+     * @return array{emails: string[], unexpected: string[]}
+     */
+    private function queuedSince(int $since, string $address): array
+    {
+        $found = ['emails' => [], 'unexpected' => []];
+        foreach (\DB::table('jobs')->where('id', '>', $since)->orderBy('id')->get(['id', 'queue', 'payload']) as $job) {
+            $payload = (string) $job->payload;
+            $decoded = json_decode($payload, true);
+            $class = is_array($decoded) && isset($decoded['displayName']) ? (string) $decoded['displayName'] : '?';
+            $command = is_array($decoded) && isset($decoded['data']['command']) ? (string) $decoded['data']['command'] : '';
+            $action = preg_match('/s:6:"action";s:\d+:"([^"]*)"/', $command, $m) ? $m[1] : '';
+            $label = '#' . $job->id . ' ' . $class . ($action === '' ? '' : ' ' . $action);
+
+            if ($job->queue === 'emails') {
+                $found['emails'][] = $label;
+            } elseif (
+                strpos($payload, $address) !== false
+                && !($class === 'App\\Jobs\\TriggerAction' && $action === 'conversation.created_by_user')
+            ) {
+                $found['unexpected'][] = $label;
+            }
+        }
+
+        return $found;
+    }
+
+    /**
+     * Positive control for queuedSince(): inside a transaction that is rolled
+     * back, a job on the emails queue and a job naming a marker address must
+     * both be reported, so a renamed table, column or queue can't make the
+     * real check pass silently.
+     */
+    private function jobsQueryControl(): string
+    {
+        if (!\Schema::hasTable('jobs') || !\Schema::hasColumn('jobs', 'payload') || !\Schema::hasColumn('jobs', 'queue')) {
+            return 'FreeScout has no jobs.queue / jobs.payload; the queued-email check cannot run';
+        }
+        $marker = 'spatbridge-e2e-control-' . bin2hex(random_bytes(6)) . '@example.test';
+        $since = (int) \DB::table('jobs')->max('id');
+        $row = function (string $queue) use ($marker): array {
+            return [
+                'queue' => $queue,
+                'payload' => json_encode(['displayName' => 'SpatBridgeE2eControl', 'data' => ['command' => 'to ' . $marker]]),
+                'attempts' => 0,
+                'reserved_at' => null,
+                'available_at' => time() + 86400,
+                'created_at' => time(),
+            ];
+        };
+        \DB::beginTransaction();
+        try {
+            \DB::table('jobs')->insert([$row('emails'), $row('default')]);
+            $found = $this->queuedSince($since, $marker);
+        } finally {
+            \DB::rollBack();
+        }
+        if (count($found['emails']) !== 1 || count($found['unexpected']) !== 1) {
+            return 'the jobs control saw ' . json_encode($found) . ', expected one emails job and one job naming the marker';
         }
 
         return '';
@@ -893,11 +990,6 @@ $spatbridgeE2e = new class {
         }
 
         return '';
-    }
-
-    private function replyJobCount(): int
-    {
-        return \DB::table('jobs')->where('payload', 'like', '%SendReplyToCustomer%')->count();
     }
 
     /**

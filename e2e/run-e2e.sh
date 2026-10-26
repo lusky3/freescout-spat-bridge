@@ -78,6 +78,20 @@ CHECKS=(
 )
 EXPECTED_CHECKS=21
 
+# Checks that span phases: how many `STEP <name>` lines (steps that passed
+# before the last one) each needs. A phase that dies prints nothing, so a
+# missing STEP fails the check instead of going unnoticed.
+declare -A CHECK_STEPS=(
+    [waitlist_offer_flow]=2              # offer preview+run; one email captured
+    [waitlist_reoffer]=1                 # two emails captured
+    [change_email_flow]=3                # in-use refusal; WP unchanged; the change
+    [change_email_foreign_old_email]=1   # WP unchanged
+    [rerun_registration]=1               # name_rejected order found in WP
+    [event_unmatched_notes_ticket]=1     # outbox row sent once
+    [event_creates_ticket_when_enabled]=2  # setup; order + queued event in WP
+    [event_retry_after_freescout_down]=3 # pending 1; SPAT's retry scheduled; sent 2
+)
+
 # php-fpm's pool user in the php:fpm base image.
 FPM_USER="www-data"
 APP_EXEC="$COMPOSE exec -T -u $FPM_USER"
@@ -91,15 +105,31 @@ collect() {
     ALL_OUTPUT+="$1"$'\n'
 }
 
-# Records a WordPress-side step of a check: a FAIL line when detail is set.
-# With "final", the step is the check's last, so success prints PASS.
+# Records a step of a check done here (on the WordPress side): FAIL with the
+# detail, or STEP when detail is empty. Each multi-step check needs all its
+# STEP lines (CHECK_STEPS) to pass, so a step that never ran fails the check.
 wp_step() {
-    local name="$1" detail="$2" final="${3:-}"
+    local name="$1" detail="$2"
     if [ -n "$detail" ]; then
         collect "FAIL ${name}: ${detail}"
-    elif [ "$final" = "final" ]; then
+    else
+        collect "STEP ${name}"
+    fi
+}
+
+# The last step of a check, done here: FAIL with the detail, else PASS.
+wp_final() {
+    local name="$1" detail="$2"
+    if [ -n "$detail" ]; then
+        collect "FAIL ${name}: ${detail}"
+    else
         collect "PASS ${name}"
     fi
+}
+
+# True when $1 is a non-negative integer, e.g. a count printed by wp_eval.
+is_count() {
+    [[ "$1" =~ ^[0-9]+$ ]]
 }
 
 # Runs PHP from stdin in tinker as the FPM user. HOME points psysh's config
@@ -157,6 +187,7 @@ wp_cron() {
             *"Success: "*) return 0 ;;
         esac
     done
+    echo "WARN: three WP-Cron passes ended without WP-CLI's Success line; due events may still be waiting." >&2
 }
 
 # Emails WordPress captured (spb-mail-capture mu-plugin) to $1.
@@ -191,25 +222,39 @@ fire_unmatched() {
     ' REF="$1" EMAIL="$CUSTOMER_EMAIL"
 }
 
-# Waits until WordPress reports healthy and the sandbox's setup program,
-# which supervisor runs on every container start, has exited since $1 (a UTC
-# timestamp taken before the start). The health endpoint says "ready" as
-# soon as a baseline export exists, and on a restart the setup runs again in
-# the background; its WP-CLI writes would race the checks (one of them wrote
-# back a stale cron array and dropped a queued event's send).
+# Waits until WordPress reports healthy and the sandbox's setup program
+# (supervisor runs it on every container start) has exited with status 0
+# since $1, a UTC timestamp taken before the start. The health endpoint says
+# "ready" as soon as the baseline export file exists, i.e. while setup is
+# still exporting. Since sandbox df93243 only that read-only export can
+# overlap; before it, a restart reran the whole setup in the background and
+# its WP-CLI writes raced the checks (one wrote back a stale cron array and
+# dropped a queued event's send). The wait keeps older sandbox refs safe and
+# turns a failed setup into a clear error.
 wait_for_wordpress() {
-    local since="$1"
+    local since="$1" healthy setup missing
     log "Waiting for sportspress-test to report healthy and finish its setup..."
     for i in $(seq 1 40); do
-        if curl -sf "${SPORTSPRESS_URL}/wp-json/test/v1/health" | grep -q '"status":"ready"' \
-            && $COMPOSE logs --no-log-prefix --since "$since" sportspress-test 2>/dev/null | grep 'exited: setup' >/dev/null; then
-            # (grep without -q reads the whole log, so `logs` never gets
-            # SIGPIPE, which pipefail would report as a failure.)
+        healthy=no
+        setup=no
+        if curl -sf "${SPORTSPRESS_URL}/wp-json/test/v1/health" | grep '"status":"ready"' >/dev/null; then
+            healthy=yes
+        fi
+        # grep without -q reads the whole log, so `logs` never gets SIGPIPE,
+        # which pipefail would report as a failure.
+        if $COMPOSE logs --no-log-prefix --since "$since" sportspress-test 2>/dev/null \
+            | grep -E 'exited: setup \(exit status 0; expected\)' >/dev/null; then
+            setup=yes
+        fi
+        if [ "$healthy" = yes ] && [ "$setup" = yes ]; then
             echo "sportspress-test is ready."
             return 0
         fi
         if [ "$i" -eq 40 ]; then
-            echo "sportspress-test did not become healthy in time." >&2
+            missing=""
+            [ "$healthy" = yes ] || missing="the health endpoint never said \"ready\""
+            [ "$setup" = yes ] || missing="${missing:+$missing; }supervisor never logged 'exited: setup (exit status 0; expected)' since ${since}"
+            echo "sportspress-test did not become ready in time: ${missing}." >&2
             exit 1
         fi
         sleep 6
@@ -364,20 +409,26 @@ run_assertions actions
 log "Waitlist assertions"
 run_assertions waitlist_panel
 
+# '' when WordPress captured exactly $3 more emails between counts $1 and $2.
+mail_delta_detail() {
+    local before="$1" after="$2" want="$3"
+    if ! is_count "$before" || ! is_count "$after"; then
+        echo "could not count WordPress's captured emails (got '${before}' and '${after}')"
+    elif [ "$after" -ne "$((before + want))" ]; then
+        echo "WordPress captured ${before} then ${after} emails to ${CUSTOMER_EMAIL}, expected ${want} more"
+    fi
+}
+
 MAIL_BEFORE=$(mail_count "$CUSTOMER_EMAIL")
 run_assertions waitlist_offer
 MAIL_AFTER=$(mail_count "$CUSTOMER_EMAIL")
-if [ "$MAIL_AFTER" != "$((MAIL_BEFORE + 1))" ]; then
-    wp_step waitlist_offer_flow "WordPress captured ${MAIL_BEFORE} then ${MAIL_AFTER} emails to ${CUSTOMER_EMAIL}, expected one more"
-fi
+wp_step waitlist_offer_flow "$(mail_delta_detail "$MAIL_BEFORE" "$MAIL_AFTER" 1)"
 run_assertions waitlist_offer_after
 
 MAIL_BEFORE=$(mail_count "$CUSTOMER_EMAIL")
 run_assertions waitlist_reoffer
 MAIL_AFTER=$(mail_count "$CUSTOMER_EMAIL")
-if [ "$MAIL_AFTER" != "$((MAIL_BEFORE + 2))" ]; then
-    wp_step waitlist_reoffer "WordPress captured ${MAIL_BEFORE} then ${MAIL_AFTER} emails to ${CUSTOMER_EMAIL}, expected two more"
-fi
+wp_step waitlist_reoffer "$(mail_delta_detail "$MAIL_BEFORE" "$MAIL_AFTER" 2)"
 
 # --------------------------------------------------------------------
 # 9. Player card actions: change email (refusals first, then the change),
@@ -428,38 +479,40 @@ CASEY_EXPECTED="change-me@example.test|change-me@example.test|change-me@example.
 JORDAN_EXPECTED="${CUSTOMER_EMAIL}|${CUSTOMER_EMAIL}|free"
 run_assertions change_email_refusals
 STATE=$(casey_state)
-if [ "$STATE" != "$CASEY_EXPECTED" ]; then
-    wp_step change_email_flow "the refused change to ${CUSTOMER_EMAIL} changed WordPress: ${STATE}"
-fi
+DETAIL=""
+[ "$STATE" = "$CASEY_EXPECTED" ] || DETAIL="the refused change to ${CUSTOMER_EMAIL} changed WordPress (player|login|order): ${STATE}"
+wp_step change_email_flow "$DETAIL"
 STATE=$(jordan_state)
-if [ "$STATE" != "$JORDAN_EXPECTED" ]; then
-    wp_step change_email_foreign_old_email "the refused change of another customer's address changed WordPress: ${STATE}"
-fi
+DETAIL=""
+[ "$STATE" = "$JORDAN_EXPECTED" ] || DETAIL="the refused change of another customer's address changed WordPress: ${STATE}"
+wp_step change_email_foreign_old_email "$DETAIL"
 
 NOTICES_BEFORE=$(email_change_mail)
 run_assertions change_email_run
 STATE=$(casey_state)
 NOTICES_AFTER=$(email_change_mail)
+DETAIL=""
 if [ "$STATE" != "casey.new@example.test|casey.new@example.test|casey.new@example.test" ]; then
-    wp_step change_email_flow "after the change, WordPress has player|login|order = ${STATE}"
-elif [ "$NOTICES_AFTER" != "$NOTICES_BEFORE" ]; then
-    wp_step change_email_flow "WordPress sent an email-changed notice (${NOTICES_BEFORE} then ${NOTICES_AFTER} matching captured emails)"
-else
-    wp_step change_email_flow "" final
+    DETAIL="after the change, WordPress has player|login|order = ${STATE}"
+elif ! is_count "$NOTICES_BEFORE" || ! is_count "$NOTICES_AFTER"; then
+    DETAIL="could not count email-changed notices (got '${NOTICES_BEFORE}' and '${NOTICES_AFTER}')"
+elif [ "$NOTICES_AFTER" -ne "$NOTICES_BEFORE" ]; then
+    DETAIL="WordPress sent an email-changed notice (${NOTICES_BEFORE} then ${NOTICES_AFTER} matching captured emails)"
 fi
+wp_final change_email_flow "$DETAIL"
 
 log "Re-run registration assertion"
-# The attention order logged name_rejected, but its billing name is valid,
-# so a real re-run would register it. An invalid name makes WordPress reject
-# it again, which is the case the check is about.
+# The fixture's attention order (billing name "Jordan Sm1th") is one
+# WordPress rejects again on a re-run.
 ATTENTION_ORDER=$(wp_eval '
     $orders = wc_get_orders( array( "limit" => 1, "meta_key" => "_spb_fixture", "meta_value" => "attention" ) );
-    if ( $orders ) {
-        $orders[0]->set_billing_last_name( "Sm1th" );
-        $orders[0]->save();
-        echo $orders[0]->get_id();
-    }
+    echo $orders ? $orders[0]->get_id() : "none";
 ')
+DETAIL=""
+if ! is_count "$ATTENTION_ORDER" || [ "$ATTENTION_ORDER" -eq 0 ]; then
+    DETAIL="no attention order in WordPress (got '${ATTENTION_ORDER}')"
+fi
+wp_step rerun_registration "$DETAIL"
 run_assertions rerun SPATBRIDGE_E2E_ORDER_ID="$ATTENTION_ORDER"
 
 # --------------------------------------------------------------------
@@ -469,14 +522,23 @@ run_assertions rerun SPATBRIDGE_E2E_ORDER_ID="$ATTENTION_ORDER"
 log "Sending the events earlier checks queued (match, offers, re-run)"
 wp_cron
 
+# SPAT's event ids are UUIDs.
+is_event_id() {
+    [[ "$1" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]
+}
+
 log "Event: unmatched e-Transfer noted on the open ticket, then a duplicate ignored"
 EVENT_REF="E2E-UNMATCHED-$(openssl rand -hex 4)"
 EVENT_ID=$(fire_unmatched "$EVENT_REF")
 wp_cron
 ROW=$(outbox_row "$EVENT_ID")
-if [ "$ROW" != "sent 1" ]; then
-    wp_step event_unmatched_notes_ticket "outbox row for event '${EVENT_ID}' is '${ROW}', expected 'sent 1'"
+DETAIL=""
+if ! is_event_id "$EVENT_ID"; then
+    DETAIL="the hook queued no event (got '${EVENT_ID}')"
+elif [ "$ROW" != "sent 1" ]; then
+    DETAIL="outbox row for event '${EVENT_ID}' is '${ROW}', expected 'sent 1'"
 fi
+wp_step event_unmatched_notes_ticket "$DETAIL"
 run_assertions events_received SPATBRIDGE_E2E_EVENT_ID="$EVENT_ID" SPATBRIDGE_E2E_EVENT_REF="$EVENT_REF"
 
 log "Event: registration.incomplete opens a ticket for a new customer"
@@ -493,6 +555,11 @@ CREATED=$(wp_eval '
 ')
 NEW_ORDER="${CREATED%% *}"
 EVENT_ID="${CREATED#* }"
+DETAIL=""
+if ! is_count "$NEW_ORDER" || ! is_event_id "$EVENT_ID"; then
+    DETAIL="creating the order and firing spr_registration_outcome printed '${CREATED}', expected '<order id> <event id>'"
+fi
+wp_step event_creates_ticket_when_enabled "$DETAIL"
 wp_cron
 run_assertions events_created SPATBRIDGE_E2E_EVENT_ID="$EVENT_ID" SPATBRIDGE_E2E_ORDER_ID="$NEW_ORDER"
 
@@ -502,28 +569,68 @@ EVENT_REF="E2E-RETRY-$(openssl rand -hex 4)"
 EVENT_ID=$(fire_unmatched "$EVENT_REF")
 wp_cron
 ROW=$(outbox_row "$EVENT_ID")
-if [ "$ROW" != "pending 1" ]; then
-    wp_step event_retry_after_freescout_down "with freescout-web down, outbox row '${EVENT_ID}' is '${ROW}', expected 'pending 1'"
+DETAIL=""
+if ! is_event_id "$EVENT_ID"; then
+    DETAIL="the hook queued no event (got '${EVENT_ID}')"
+elif [ "$ROW" != "pending 1" ]; then
+    DETAIL="with freescout-web down, outbox row '${EVENT_ID}' is '${ROW}', expected 'pending 1'"
 fi
+wp_step event_retry_after_freescout_down "$DETAIL"
+
 $COMPOSE start freescout-web
+FREESCOUT_UP=no
 for _ in $(seq 1 20); do
-    curl -s -o /dev/null "${FREESCOUT_URL}/login" && break
+    if curl -fs -o /dev/null "${FREESCOUT_URL}/login"; then
+        FREESCOUT_UP=yes
+        break
+    fi
     sleep 1
 done
-# The retry is due in 60 s. Make the row and its cron event due now.
-wp_eval '
+[ "$FREESCOUT_UP" = yes ] || echo "WARN: ${FREESCOUT_URL}/login did not answer 2xx within 20 s of starting freescout-web." >&2
+
+# SPAT must have scheduled the retry itself (60 s after the failure). Only
+# that existing cron event and the row's next_attempt_at are moved into the
+# past; nothing is scheduled here, so a lost retry still fails the check.
+MOVED=$(wp_eval '
     global $wpdb;
-    $id = getenv( "EVENT_ID" );
-    $wpdb->update( SPAT_FreeScout_Events::table(), array( "next_attempt_at" => gmdate( "Y-m-d H:i:s", time() - 60 ) ), array( "event_id" => $id ) );
-    wp_clear_scheduled_hook( SPAT_FreeScout_Events::SEND_HOOK, array( $id ) );
-    wp_schedule_single_event( time() - 60, SPAT_FreeScout_Events::SEND_HOOK, array( $id ) );
-    echo "due";
-' EVENT_ID="$EVENT_ID" >/dev/null
+    $id   = getenv( "EVENT_ID" );
+    $hook = SPAT_FreeScout_Events::SEND_HOOK;
+    $args = array( $id );
+    $ts   = wp_next_scheduled( $hook, $args );
+    if ( ! $ts ) {
+        echo "no retry scheduled";
+        return;
+    }
+    if ( $ts <= time() ) {
+        echo "retry scheduled at " . gmdate( "H:i:s", $ts ) . ", not in the future";
+        return;
+    }
+    $key   = md5( serialize( $args ) );
+    $crons = _get_cron_array();
+    $event = $crons[ $ts ][ $hook ][ $key ];
+    unset( $crons[ $ts ][ $hook ][ $key ] );
+    if ( empty( $crons[ $ts ][ $hook ] ) ) {
+        unset( $crons[ $ts ][ $hook ] );
+    }
+    if ( empty( $crons[ $ts ] ) ) {
+        unset( $crons[ $ts ] );
+    }
+    $past                             = time() - 60;
+    $crons[ $past ][ $hook ][ $key ] = $event;
+    ksort( $crons );
+    _set_cron_array( $crons );
+    $wpdb->update( SPAT_FreeScout_Events::table(), array( "next_attempt_at" => gmdate( "Y-m-d H:i:s", $past ) ), array( "event_id" => $id ) );
+    echo "moved";
+' EVENT_ID="$EVENT_ID")
+DETAIL=""
+[ "$MOVED" = "moved" ] || DETAIL="SPAT's retry for event '${EVENT_ID}': ${MOVED:-no output}"
+wp_step event_retry_after_freescout_down "$DETAIL"
+
 wp_cron
 ROW=$(outbox_row "$EVENT_ID")
-if [ "$ROW" != "sent 2" ]; then
-    wp_step event_retry_after_freescout_down "after freescout-web came back, outbox row '${EVENT_ID}' is '${ROW}', expected 'sent 2'"
-fi
+DETAIL=""
+[ "$ROW" = "sent 2" ] || DETAIL="after freescout-web came back, outbox row '${EVENT_ID}' is '${ROW}', expected 'sent 2'"
+wp_step event_retry_after_freescout_down "$DETAIL"
 run_assertions events_retried SPATBRIDGE_E2E_EVENT_ID="$EVENT_ID" SPATBRIDGE_E2E_EVENT_REF="$EVENT_REF"
 
 # Read as root so nothing is hidden by permissions; nothing is written.
@@ -535,18 +642,23 @@ else
     collect "FAIL cache_not_root_owned: $(printf '%s' "$ROOT_OWNED" | head -5 | tr '\n' ' ')"
 fi
 
-# One line per check, in CHECKS order: its first FAIL line, else PASS when a
-# phase printed PASS for it, else FAIL for a missing result.
+# One line per check, in CHECKS order: its first FAIL line; else FAIL when
+# it has fewer STEP lines than CHECK_STEPS requires or no PASS line (a phase
+# died); else PASS.
 if [ "${#CHECKS[@]}" -ne "$EXPECTED_CHECKS" ]; then
     echo "CHECKS lists ${#CHECKS[@]} checks, EXPECTED_CHECKS is ${EXPECTED_CHECKS}." >&2
     exit 1
 fi
 RESULTS=""
 for name in "${CHECKS[@]}"; do
-    lines=$(printf '%s\n' "$ALL_OUTPUT" | grep -E "^(PASS|FAIL) ${name}(:|\$)" || true)
+    lines=$(printf '%s\n' "$ALL_OUTPUT" | grep -E "^(PASS|FAIL|STEP) ${name}(:|\$)" || true)
     failure=$(printf '%s\n' "$lines" | grep -m 1 '^FAIL ' || true)
+    steps=$(printf '%s\n' "$lines" | grep -c '^STEP ' || true)
+    required="${CHECK_STEPS[$name]:-0}"
     if [ -n "$failure" ]; then
         RESULTS+="${failure}"$'\n'
+    elif [ "$steps" -lt "$required" ]; then
+        RESULTS+="FAIL ${name}: only ${steps} of ${required} steps reported (a phase died before finishing)"$'\n'
     elif printf '%s\n' "$lines" | grep -q '^PASS '; then
         RESULTS+="PASS ${name}"$'\n'
     else

@@ -215,7 +215,13 @@ last check asserts that FreeScout's cache holds nothing owned by root. The
 script prints one `PASS` or `FAIL` line per check and exits non-zero on any
 failure. The action checks change WordPress data, so each run recreates the
 WordPress container. The sandbox turns WP-Cron off, so the script runs
-`wp cron event run --due-now` itself whenever events should go out.
+`wp cron event run --due-now` itself whenever events should go out. It
+repeats a pass until WP-CLI reports success, because WooCommerce's
+background-process healthcheck events end a pass early with `exit`.
+
+The sandbox's health endpoint reports ready while its setup is still
+exporting the baseline. After every WordPress start, the script also waits
+until supervisor logs that the sandbox's setup exited with status 0.
 
 It expects
 [sportspress-sandbox](https://github.com/lusky3/sportspress-sandbox) and

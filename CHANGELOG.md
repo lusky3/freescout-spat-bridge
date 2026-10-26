@@ -55,6 +55,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as the web server user). Cloning is kept as a development install.
 - README: the end-to-end section lists the waitlist, Player card action and
   WordPress event checks.
+- README: the end-to-end section names the sandbox workarounds the script
+  still needs (repeated cron passes, waiting for the sandbox setup to exit).
 
 ### Fixed
 
