@@ -245,6 +245,19 @@ class EventRouterTest extends TestCase
         $this->assertSame([['attach', 'payment-unmatched', 11]], FakeTag::$calls);
     }
 
+    public function test_notes_off_with_a_blank_tag_override_is_not_recorded_as_tagged(): void
+    {
+        $this->options->set('spatbridge.events.notes', '0');
+        $this->options->set('spatbridge.events.etransfer.unmatched.tag', '');
+        $router = $this->router([self::EMAIL => [$this->conversation(11, 3)]], [], null);
+
+        $result = $router->route($this->event());
+
+        $this->assertSame(['outcome' => 'notes_tags_off', 'conversation_ids' => [11], 'detail' => ''], $result);
+        $this->assertSame([], Thread::$created);
+        $this->assertSame([], FakeTag::$calls);
+    }
+
     public function test_notes_off_with_tags_unavailable_is_tag_skipped(): void
     {
         $this->options->set('spatbridge.events.notes', '0');

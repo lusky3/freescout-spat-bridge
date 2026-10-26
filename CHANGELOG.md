@@ -120,3 +120,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The settings page's "Events table missing" hint now says to run
   `php artisan freescout:module-install spatbridge` as the web server user;
   plain `php artisan migrate` is cancelled in production.
+- With event notes off and tags on, a type whose tag was cleared in settings
+  is logged as "Nothing done" instead of "Tag updated, no note".

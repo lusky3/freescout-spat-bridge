@@ -110,7 +110,8 @@ class EventRouter
     private function noteAll(array $event, array $conversations): array
     {
         $notesOn = $this->bool('spatbridge.events.notes', true);
-        if (!$notesOn && !$this->bool('spatbridge.events.tags', true)) {
+        // Nothing to do: notes are off and so are tags, or no tag is set for this type.
+        if (!$notesOn && !$this->hasTagWork($event['type'])) {
             $ids = array_map(function ($conversation) {
                 return (int) $conversation->id;
             }, $conversations);
@@ -172,6 +173,12 @@ class EventRouter
         $tagged = $this->applyTags($conversation, $event['type']);
 
         return self::result($tagged ? self::CREATED : self::CREATED_TAG_SKIPPED, [(int) $conversation->id]);
+    }
+
+    private function hasTagWork(string $type): bool
+    {
+        return $this->bool('spatbridge.events.tags', true)
+            && ($this->addTag($type) !== '' || $this->removeTag($type) !== '');
     }
 
     /**
