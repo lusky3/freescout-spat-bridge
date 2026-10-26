@@ -11,3 +11,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Module scaffold: `module.json`, service provider skeleton, option store,
   PHPUnit/PHPCS harness, CI workflows and the Docker dev environment.
+- Feature contract, `Panel`/`PanelRow` model and `FeatureRegistry` with
+  per-feature switches and ordering.

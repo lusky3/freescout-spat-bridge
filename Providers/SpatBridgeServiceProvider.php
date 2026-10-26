@@ -4,6 +4,7 @@ namespace Modules\SpatBridge\Providers;
 
 use GuzzleHttp\Client;
 use Illuminate\Support\ServiceProvider;
+use Modules\SpatBridge\Features\FeatureRegistry;
 use Modules\SpatBridge\Services\Support\LaravelOptionStore;
 use Modules\SpatBridge\Services\Support\OptionStoreInterface;
 use Psr\Log\LoggerInterface;
@@ -19,6 +20,10 @@ class SpatBridgeServiceProvider extends ServiceProvider
     public function register()
     {
         $this->app->bind(OptionStoreInterface::class, LaravelOptionStore::class);
+
+        $this->app->singleton(FeatureRegistry::class, function () {
+            return new FeatureRegistry();
+        });
 
         $this->app->bind(LoggerInterface::class, function ($app) {
             return $app['log'];
