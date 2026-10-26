@@ -202,4 +202,14 @@ class EventCatalogTest extends TestCase
             $this->catalog->subject('etransfer.unmatched', ['from_name' => ['x'], 'amount' => '2'])
         );
     }
+
+    public function test_subjects_are_capped_at_200_characters(): void
+    {
+        $data = ['from_name' => str_repeat('é', 300), 'amount' => '2'];
+
+        $subject = $this->catalog->subject('etransfer.unmatched', $data);
+
+        $this->assertSame(200, mb_strlen($subject));
+        $this->assertSame('Unmatched e-Transfer: éé', mb_substr($subject, 0, 24));
+    }
 }

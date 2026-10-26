@@ -11,6 +11,8 @@ use Modules\SpatBridge\Services\Support\OptionStoreInterface;
 use Modules\SpatBridge\Services\TagService;
 use Modules\SpatBridge\Services\TicketCreator;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
+use Psr\Log\Test\TestLogger;
 use Tests\Support\FakeCustomer;
 use Tests\Support\FakeEventStore;
 use Tests\Support\FakeOptionStore;
@@ -34,9 +36,15 @@ class EventRouterTest extends TestCase
     private $tagsActive = true;
     /** @var array<int, array> */
     private $created = [];
+    /** @var TestLogger */
+    private $logger;
+    /** @var int[] Conversations whose note FreeScout refuses. */
+    private $failNoteOn = [];
 
     protected function setUp(): void
     {
+        $this->logger = new TestLogger();
+        $this->failNoteOn = [];
         Thread::reset();
         FakeTag::reset();
         $this->options = new FakeOptionStore();
@@ -85,13 +93,33 @@ class EventRouterTest extends TestCase
             }
         };
 
+        $failNoteOn = $this->failNoteOn;
+        $notes = new class ($failNoteOn) extends NoteWriter {
+            /** @var int[] */
+            private $failOn;
+
+            public function __construct(array $failOn)
+            {
+                $this->failOn = $failOn;
+            }
+
+            public function add($conversation, $user, string $html): void
+            {
+                if (in_array((int) $conversation->id, $this->failOn, true)) {
+                    throw new \RuntimeException('FreeScout did not create the note.');
+                }
+                parent::add($conversation, $user, $html);
+            }
+        };
+
         return new class (
             $this->options,
             new EventCatalog(),
-            new NoteWriter(),
+            $notes,
             $tags,
             $creator,
             $this->store,
+            $this->logger,
             $open,
             $users,
             $admin
@@ -112,11 +140,12 @@ class EventRouterTest extends TestCase
                 TagService $tags,
                 TicketCreator $creator,
                 EventStoreInterface $store,
+                LoggerInterface $logger,
                 array $open,
                 array $users,
                 ?object $admin
             ) {
-                parent::__construct($options, $catalog, $notes, $tags, $creator, $store);
+                parent::__construct($options, $catalog, $notes, $tags, $creator, $store, $logger);
                 $this->open = $open;
                 $this->users = $users;
                 $this->admin = $admin;
@@ -351,6 +380,65 @@ class EventRouterTest extends TestCase
         $router->route($this->event());
 
         $this->assertSame(2, Thread::$created[0][0]['created_by_user_id']);
+    }
+
+    public function test_a_ticket_that_fails_does_not_stop_the_others(): void
+    {
+        $this->failNoteOn = [12];
+        $router = $this->router([self::EMAIL => [
+            $this->conversation(11, 3),
+            $this->conversation(12, 3),
+            $this->conversation(13, 3),
+        ]]);
+
+        $result = $router->route($this->event());
+
+        $this->assertSame([
+            'outcome' => 'noted',
+            'conversation_ids' => [11, 13],
+            'detail' => '#12: FreeScout did not create the note.',
+        ], $result);
+        $this->assertCount(2, Thread::$created);
+        // The failed ticket isn't tagged either.
+        $this->assertSame([['attach', 'payment-unmatched', 11], ['attach', 'payment-unmatched', 13]], FakeTag::$calls);
+        $this->assertTrue($this->logger->hasErrorThatContains('on conversation #12 failed'));
+    }
+
+    public function test_every_ticket_failing_is_an_error(): void
+    {
+        $this->failNoteOn = [11, 12];
+        $router = $this->router([self::EMAIL => [$this->conversation(11, 3), $this->conversation(12, 3)]]);
+
+        $result = $router->route($this->event());
+
+        $this->assertSame('error', $result['outcome']);
+        $this->assertSame([], $result['conversation_ids']);
+        $this->assertSame(
+            '#11: FreeScout did not create the note.; #12: FreeScout did not create the note.',
+            $result['detail']
+        );
+    }
+
+    public function test_falling_back_from_a_missing_note_user_is_logged(): void
+    {
+        $this->options->set('spatbridge.events.note_user_id', 7);
+        $router = $this->router([self::EMAIL => [$this->conversation(11, 3), $this->conversation(12, 3)]], [], 2);
+
+        $router->route($this->event());
+
+        $this->assertCount(1, $this->logger->records);
+        $this->assertTrue($this->logger->hasWarningThatContains('note user #7 is missing or inactive'));
+    }
+
+    public function test_a_configured_active_note_user_logs_nothing(): void
+    {
+        $this->options->set('spatbridge.events.note_user_id', 7);
+        $router = $this->router([self::EMAIL => [$this->conversation(11, 3)]], [7 => (object) ['id' => 7]]);
+
+        $router->route($this->event());
+
+        $this->assertSame(7, Thread::$created[0][0]['created_by_user_id']);
+        $this->assertSame([], $this->logger->records);
     }
 
     public function test_no_note_user_is_an_error_and_changes_nothing(): void

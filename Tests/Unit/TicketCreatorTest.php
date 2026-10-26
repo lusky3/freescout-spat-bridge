@@ -22,20 +22,22 @@ class TicketCreatorTest extends TestCase
     }
 
     /**
-     * @return TicketCreator&object{calls: array}
+     * @return TicketCreator&object{calls: array, skipDuringCreate: bool|null}
      */
-    private function creator(bool $conversationCreated = true)
+    private function creator(string $mode = 'created')
     {
-        return new class (new EventCatalog(), $conversationCreated) extends TicketCreator {
+        return new class (new EventCatalog(), $mode) extends TicketCreator {
             /** @var array<int, array> */
             public $calls = [];
-            /** @var bool */
-            private $conversationCreated;
+            /** @var bool|null What the skip-send filter said while core was creating. */
+            public $skipDuringCreate;
+            /** @var string 'created', 'refused' (core returns false) or 'throws' */
+            private $mode;
 
-            public function __construct(EventCatalog $catalog, bool $conversationCreated)
+            public function __construct(EventCatalog $catalog, string $mode)
             {
                 parent::__construct($catalog);
-                $this->conversationCreated = $conversationCreated;
+                $this->mode = $mode;
             }
 
             protected function findOrCreateCustomer(string $email, array $fields)
@@ -55,18 +57,28 @@ class TicketCreatorTest extends TestCase
             protected function createConversation(array $data, array $threads, $customer)
             {
                 $this->calls[] = ['createConversation', $data, $threads, $customer];
-                if (!$this->conversationCreated) {
-                    return null;
-                }
                 $conversation = new Conversation();
                 $conversation->id = 900;
+                $conversation->mailbox = new class {
+                    /** @var int */
+                    public $countersUpdated = 0;
+
+                    public function updateFoldersCounters(): void
+                    {
+                        $this->countersUpdated++;
+                    }
+                };
+                // Core fires the send-reply listener inside create(), before
+                // the meta exists; the note-only replies collection is empty.
+                $this->skipDuringCreate = TicketCreator::skipSend(false, $conversation, []);
+                if ($this->mode === 'throws') {
+                    throw new \RuntimeException('Mailbox 3 not found.');
+                }
+                if ($this->mode === 'refused') {
+                    return null;
+                }
 
                 return $conversation;
-            }
-
-            protected function activate($conversation, string $eventId): void
-            {
-                $this->calls[] = ['activate', $conversation->id, $eventId];
             }
         };
     }
@@ -111,7 +123,13 @@ class TicketCreatorTest extends TestCase
         ]], $threads);
         $this->assertSame(50, $customer->id);
 
-        $this->assertSame(['activate', 900, self::EVENT_ID], $creator->calls[2]);
+        // Active, sorted as just replied to, marked as the bridge's, saved.
+        $this->assertSame(Conversation::STATUS_ACTIVE, $conversation->status);
+        $this->assertSame(Conversation::PERSON_USER, $conversation->last_reply_from);
+        $this->assertEqualsWithDelta(time(), strtotime((string) $conversation->last_reply_at), 5);
+        $this->assertSame(['event_id' => self::EVENT_ID], $conversation->getMeta(TicketCreator::META_KEY));
+        $this->assertSame(['updateFolder', 'save'], $conversation->calls);
+        $this->assertSame(1, $conversation->mailbox->countersUpdated);
     }
 
     public function test_a_known_sender_name_is_offered_for_a_new_customer(): void
@@ -154,26 +172,14 @@ class TicketCreatorTest extends TestCase
         $this->assertSame('Unmatched e-Transfer: Unknown sender, $5.00', $creator->calls[1][1]['subject']);
     }
 
+
     public function test_freescout_refusing_the_conversation_throws(): void
     {
-        $creator = $this->creator(false);
+        $creator = $this->creator('refused');
 
         $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('FreeScout did not create the conversation.');
         $creator->create($this->event('pat@example.com', ['amount' => '5']), $this->user, 3);
-    }
-
-    /**
-     * A threads check that answers $hasReply and records what it was asked.
-     *
-     * @param int[] $asked
-     */
-    private function replyCheck(bool $hasReply, array &$asked): callable
-    {
-        return function ($conversation) use ($hasReply, &$asked) {
-            $asked[] = $conversation->id;
-
-            return $hasReply;
-        };
     }
 
     private function bridgeTicket(): Conversation
@@ -185,30 +191,56 @@ class TicketCreatorTest extends TestCase
         return $ticket;
     }
 
-    public function test_skip_send_blocks_mail_on_a_bridge_ticket_with_only_notes(): void
+    private function thread(int $type): object
     {
-        $asked = [];
+        return (object) ['type' => $type];
+    }
 
-        $this->assertTrue(TicketCreator::skipSend(false, $this->bridgeTicket(), $this->replyCheck(false, $asked)));
-        $this->assertSame([900], $asked);
+    public function test_skip_send_blocks_mail_while_core_creates_the_ticket(): void
+    {
+        $creator = $this->creator();
+
+        $creator->create($this->event('pat@example.com', ['amount' => '5']), $this->user, 3);
+
+        $this->assertTrue($creator->skipDuringCreate);
+        // The marker is gone once create() returns.
+        $this->assertFalse(TicketCreator::skipSend(false, new Conversation(), []));
+    }
+
+    public function test_skip_send_marker_is_cleared_when_creation_fails(): void
+    {
+        $creator = $this->creator('throws');
+
+        try {
+            $creator->create($this->event('pat@example.com', ['amount' => '5']), $this->user, 3);
+            $this->fail('Expected the creation failure.');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('Mailbox 3 not found.', $e->getMessage());
+        }
+
+        $this->assertTrue($creator->skipDuringCreate);
+        $this->assertFalse(TicketCreator::skipSend(false, new Conversation(), []));
+    }
+
+    public function test_skip_send_blocks_mail_on_a_bridge_ticket_without_an_agent_message(): void
+    {
+        $this->assertTrue(TicketCreator::skipSend(false, $this->bridgeTicket(), []));
+        $customerOnly = [$this->thread(Thread::TYPE_CUSTOMER)];
+        $this->assertTrue(TicketCreator::skipSend(false, $this->bridgeTicket(), $customerOnly));
+        $this->assertTrue(TicketCreator::skipSend(false, $this->bridgeTicket(), null));
     }
 
     public function test_skip_send_lets_an_agent_reply_on_a_bridge_ticket_go_out(): void
     {
-        $asked = [];
+        $replies = new \ArrayIterator([$this->thread(Thread::TYPE_CUSTOMER), $this->thread(Thread::TYPE_MESSAGE)]);
 
-        $this->assertFalse(TicketCreator::skipSend(false, $this->bridgeTicket(), $this->replyCheck(true, $asked)));
-        $this->assertSame([900], $asked);
+        $this->assertFalse(TicketCreator::skipSend(false, $this->bridgeTicket(), $replies));
     }
 
-    public function test_skip_send_passes_other_tickets_through_without_a_query(): void
+    public function test_skip_send_passes_other_tickets_through(): void
     {
-        $asked = [];
-        $check = $this->replyCheck(false, $asked);
-
-        $this->assertFalse(TicketCreator::skipSend(false, new Conversation(), $check));
-        $this->assertTrue(TicketCreator::skipSend(true, new Conversation(), $check));
-        $this->assertFalse(TicketCreator::skipSend(false, null, $check));
-        $this->assertSame([], $asked);
+        $this->assertFalse(TicketCreator::skipSend(false, new Conversation(), []));
+        $this->assertTrue(TicketCreator::skipSend(true, new Conversation(), [$this->thread(Thread::TYPE_MESSAGE)]));
+        $this->assertFalse(TicketCreator::skipSend(false, null, []));
     }
 }

@@ -6,14 +6,20 @@ namespace Modules\SpatBridge\Services;
  * Opens a ticket for an event when the customer has no open one and that
  * event type's "create" switch is on.
  *
- * Opening the ticket never mails the customer: it is a phone conversation
- * whose only thread is an internal note, and it carries `spatbridge` meta so
- * the `conversation.skip_send_reply_to_customer` filter (skipSend) stops any
- * mail until an agent writes a real reply.
+ * Opening the ticket doesn't mail the customer. It is a phone conversation
+ * whose only thread is an internal note, and the
+ * `conversation.skip_send_reply_to_customer` filter (skipSend) blocks
+ * customer mail for it until an agent writes a real reply. FreeScout runs
+ * that filter inside Conversation::create(), before the ticket's
+ * `spatbridge` meta can be saved, so an in-flight marker covers creation and
+ * the meta covers everything after.
  */
 class TicketCreator
 {
     public const META_KEY = 'spatbridge';
+
+    /** @var string|null The event id while create() is making its conversation. */
+    private static $creating;
 
     /** @var EventCatalog */
     private $catalog;
@@ -46,22 +52,27 @@ class TicketCreator
             throw new \RuntimeException('FreeScout did not create the customer.');
         }
 
-        $conversation = $this->createConversation(
-            [
-                'type' => \App\Conversation::TYPE_PHONE,
-                'subject' => $this->catalog->subject($type, $data),
-                'mailbox_id' => $mailboxId,
-                'source_type' => \App\Conversation::SOURCE_TYPE_API,
-                'source_via' => \App\Conversation::PERSON_USER,
-                'status' => \App\Conversation::STATUS_ACTIVE,
-            ],
-            [[
-                'type' => \App\Thread::TYPE_NOTE,
-                'body' => $this->catalog->noteHtml($type, $data),
-                'created_by_user_id' => (int) $user->id,
-            ]],
-            $customer
-        );
+        self::$creating = (string) $event['id'];
+        try {
+            $conversation = $this->createConversation(
+                [
+                    'type' => \App\Conversation::TYPE_PHONE,
+                    'subject' => $this->catalog->subject($type, $data),
+                    'mailbox_id' => $mailboxId,
+                    'source_type' => \App\Conversation::SOURCE_TYPE_API,
+                    'source_via' => \App\Conversation::PERSON_USER,
+                    'status' => \App\Conversation::STATUS_ACTIVE,
+                ],
+                [[
+                    'type' => \App\Thread::TYPE_NOTE,
+                    'body' => $this->catalog->noteHtml($type, $data),
+                    'created_by_user_id' => (int) $user->id,
+                ]],
+                $customer
+            );
+        } finally {
+            self::$creating = null;
+        }
         if (!is_object($conversation)) {
             throw new \RuntimeException('FreeScout did not create the conversation.');
         }
@@ -72,47 +83,30 @@ class TicketCreator
     }
 
     /**
-     * The `conversation.skip_send_reply_to_customer` filter: no customer
-     * mail from a ticket the bridge created while it holds only notes. Once
-     * an agent writes a real reply, the reply goes out as usual.
+     * The `conversation.skip_send_reply_to_customer` filter, called by core
+     * as ($skip, $conversation, $replies). Blocks customer mail for a bridge
+     * ticket (being created now, or carrying `spatbridge` meta) while the
+     * replies about to be sent hold no agent message. Once an agent writes a
+     * real reply, $skip passes through unchanged and the reply goes out.
      *
      * @param mixed $skip
      * @param mixed $conversation
-     * @param (callable(object): bool)|null $hasAgentReply Seam for the threads query.
+     * @param iterable|mixed $replies Threads core is about to send.
      */
-    public static function skipSend($skip, $conversation, ?callable $hasAgentReply = null): bool
+    public static function skipSend($skip, $conversation, $replies = []): bool
     {
         if ($skip) {
             return true;
         }
 
-        $bridgeTicket = is_object($conversation)
+        $bridgeTicket = self::$creating !== null || (
+            is_object($conversation)
             && method_exists($conversation, 'getMeta')
-            && !empty($conversation->getMeta(self::META_KEY));
-        if (!$bridgeTicket) {
-            return false;
-        }
+            && !empty($conversation->getMeta(self::META_KEY))
+        );
 
-        return !call_user_func($hasAgentReply ?? [self::class, 'hasAgentReply'], $conversation);
+        return $bridgeTicket && !self::hasAgentMessage($replies);
     }
-
-    // @codeCoverageIgnoreStart
-    //
-    // One exists-query on FreeScout's threads table; the unit tests pass
-    // their own check to skipSend().
-
-    /**
-     * Whether the conversation has a customer-visible reply from an agent.
-     *
-     * @param object $conversation
-     */
-    public static function hasAgentReply($conversation): bool
-    {
-        return \App\Thread::where('conversation_id', (int) $conversation->id)
-            ->where('type', \App\Thread::TYPE_MESSAGE)
-            ->exists();
-    }
-    // @codeCoverageIgnoreEnd
 
     /**
      * "Pat Q Smith" → first name "Pat", last name "Q Smith".
@@ -127,6 +121,42 @@ class TicketCreator
             'first_name' => mb_substr($parts[0], 0, 100),
             'last_name' => isset($parts[1]) ? mb_substr(preg_replace('/\s+/', ' ', $parts[1]), 0, 100) : '',
         ];
+    }
+
+    /**
+     * Conversation::create() always makes a phone conversation Pending;
+     * the bridge's tickets need an agent, so they start Active. Like core's
+     * own phone-plus-note path, the note counts as the last reply, so the
+     * ticket sorts by now in the agent queue rather than at the bottom.
+     *
+     * @param object $conversation
+     */
+    protected function activate($conversation, string $eventId): void
+    {
+        $conversation->status = \App\Conversation::STATUS_ACTIVE;
+        $conversation->last_reply_at = date('Y-m-d H:i:s');
+        $conversation->last_reply_from = \App\Conversation::PERSON_USER;
+        $conversation->setMeta(self::META_KEY, ['event_id' => $eventId]);
+        $conversation->updateFolder();
+        $conversation->save();
+        $conversation->mailbox->updateFoldersCounters();
+    }
+
+    /**
+     * @param iterable|mixed $replies
+     */
+    private static function hasAgentMessage($replies): bool
+    {
+        if (!is_iterable($replies)) {
+            return false;
+        }
+        foreach ($replies as $reply) {
+            if (is_object($reply) && (int) ($reply->type ?? 0) === \App\Thread::TYPE_MESSAGE) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     // @codeCoverageIgnoreStart
@@ -162,21 +192,6 @@ class TicketCreator
         $result = \App\Conversation::create($data, $threads, $customer);
 
         return is_array($result) ? $result['conversation'] : null;
-    }
-
-    /**
-     * Conversation::create() always makes a phone conversation Pending;
-     * the bridge's tickets need an agent, so they start Active.
-     *
-     * @param object $conversation
-     */
-    protected function activate($conversation, string $eventId): void
-    {
-        $conversation->status = \App\Conversation::STATUS_ACTIVE;
-        $conversation->setMeta(self::META_KEY, ['event_id' => $eventId]);
-        $conversation->updateFolder();
-        $conversation->save();
-        $conversation->mailbox->updateFoldersCounters();
     }
     // @codeCoverageIgnoreEnd
 }

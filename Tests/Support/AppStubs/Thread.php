@@ -10,6 +10,7 @@ namespace App;
  */
 class Thread
 {
+    public const TYPE_CUSTOMER = 1;
     public const TYPE_MESSAGE = 2;
     public const TYPE_NOTE = 3;
 

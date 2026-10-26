@@ -180,14 +180,14 @@ class SpatBridgeServiceProvider extends ServiceProvider
     }
 
     /**
-     * Tickets the bridge opens for WordPress events never mail the customer,
-     * and the event log is pruned daily.
+     * Opening a ticket for a WordPress event doesn't mail the customer (an
+     * agent's later reply does go out), and the event log is pruned daily.
      */
     protected function registerEvents(): void
     {
-        \Eventy::addFilter('conversation.skip_send_reply_to_customer', function ($skip, $conversation) {
-            return TicketCreator::skipSend($skip, $conversation);
-        }, 20, 2);
+        \Eventy::addFilter('conversation.skip_send_reply_to_customer', function ($skip, $conversation, $replies) {
+            return TicketCreator::skipSend($skip, $conversation, $replies);
+        }, 20, 3);
 
         \Eventy::addFilter('schedule', function ($schedule) {
             $schedule->command('spatbridge:prune-events')->daily();

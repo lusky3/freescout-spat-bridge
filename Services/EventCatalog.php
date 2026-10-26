@@ -11,6 +11,7 @@ namespace Modules\SpatBridge\Services;
 final class EventCatalog
 {
     private const UNKNOWN_SENDER = 'Unknown sender';
+    public const SUBJECT_MAX = 200;
 
     /** @var array<string, array{add?: string, remove?: string}> */
     private const TAGS = [
@@ -67,7 +68,15 @@ final class EventCatalog
             . '<p><small>' . self::escape(__('via ARL League (event)')) . '</small></p>';
     }
 
+    /**
+     * At most SUBJECT_MAX characters, whatever WordPress sends.
+     */
     public function subject(string $type, array $data): string
+    {
+        return mb_substr($this->fullSubject($type, $data), 0, self::SUBJECT_MAX);
+    }
+
+    private function fullSubject(string $type, array $data): string
     {
         $order = $this->text($data, 'order_id');
         $season = trim($this->text($data, 'season') . ' ' . $this->text($data, 'position'));

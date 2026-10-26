@@ -4,6 +4,7 @@ namespace Modules\SpatBridge\Services;
 
 use Modules\SpatBridge\Services\Support\OptionBool;
 use Modules\SpatBridge\Services\Support\OptionStoreInterface;
+use Psr\Log\LoggerInterface;
 
 /**
  * Decides what an event from WordPress does in FreeScout: an internal note
@@ -42,6 +43,8 @@ class EventRouter
     private $creator;
     /** @var EventStoreInterface */
     private $store;
+    /** @var LoggerInterface */
+    private $logger;
 
     public function __construct(
         OptionStoreInterface $options,
@@ -49,7 +52,8 @@ class EventRouter
         NoteWriter $notes,
         TagService $tags,
         TicketCreator $creator,
-        EventStoreInterface $store
+        EventStoreInterface $store,
+        LoggerInterface $logger
     ) {
         $this->options = $options;
         $this->catalog = $catalog;
@@ -57,6 +61,7 @@ class EventRouter
         $this->tags = $tags;
         $this->creator = $creator;
         $this->store = $store;
+        $this->logger = $logger;
     }
 
     /**
@@ -90,6 +95,9 @@ class EventRouter
     }
 
     /**
+     * Each ticket is handled on its own: one that fails is logged and named
+     * in the detail, and the rest still get their note and tag.
+     *
      * @param object[] $conversations
      */
     private function noteAll(array $event, array $conversations): array
@@ -106,15 +114,29 @@ class EventRouter
         $html = $this->catalog->noteHtml($event['type'], $event['data']);
         $tagged = true;
         $ids = [];
+        $failures = [];
         foreach ($conversations as $conversation) {
-            if ($notesOn) {
-                $this->notes->add($conversation, $user, $html);
+            $id = (int) $conversation->id;
+            try {
+                if ($notesOn) {
+                    $this->notes->add($conversation, $user, $html);
+                }
+                $tagged = $this->applyTags($conversation, $event['type']) && $tagged;
+                $ids[] = $id;
+            } catch (\Throwable $e) {
+                $this->logger->error(
+                    '[SpatBridge] event ' . $event['id'] . ' on conversation #' . $id . ' failed: ' . $e->getMessage()
+                );
+                $failures[] = '#' . $id . ': ' . $e->getMessage();
             }
-            $tagged = $this->applyTags($conversation, $event['type']) && $tagged;
-            $ids[] = (int) $conversation->id;
         }
 
-        return self::result($tagged ? self::NOTED : self::NOTED_TAG_SKIPPED, $ids);
+        $detail = implode('; ', $failures);
+        if ($ids === []) {
+            return self::result(self::ERROR, [], $detail);
+        }
+
+        return self::result($tagged ? self::NOTED : self::NOTED_TAG_SKIPPED, $ids, $detail);
     }
 
     private function createTicket(array $event): array
@@ -227,6 +249,9 @@ class EventRouter
             if ($user !== null) {
                 return $user;
             }
+            $this->logger->warning(
+                '[SpatBridge] events note user #' . $id . ' is missing or inactive; using the first active admin.'
+            );
         }
 
         return $this->firstActiveAdmin();

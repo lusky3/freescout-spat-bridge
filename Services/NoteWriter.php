@@ -3,8 +3,9 @@
 namespace Modules\SpatBridge\Services;
 
 /**
- * Records the outcome of an action as an internal note on the ticket.
- * Notes go to agents only; FreeScout never emails them to the customer.
+ * Adds internal notes to tickets: the outcome of an action, or an event from
+ * WordPress. Notes go to agents only; FreeScout never emails them to the
+ * customer.
  */
 class NoteWriter
 {
@@ -29,8 +30,10 @@ class NoteWriter
 
     /**
      * @param object $conversation FreeScout conversation (with a customer).
-     * @param object $user The agent the note is credited to.
-     * @param string $html A body built by actionBody(), never raw input.
+     * @param object $user The FreeScout user the note is credited to: the agent
+     *                     who ran an action, or the events note user.
+     * @param string $html A body built by actionBody() or EventCatalog::noteHtml(),
+     *                     never raw input.
      * @throws \RuntimeException When FreeScout refuses the note.
      */
     public function add($conversation, $user, string $html): void
