@@ -9,6 +9,7 @@ use Modules\SpatBridge\Features\Feature;
 use Modules\SpatBridge\Features\FeatureRegistry;
 use Modules\SpatBridge\Features\GuardsActionParams;
 use Modules\SpatBridge\Features\Panel;
+use Modules\SpatBridge\Features\PlayerCard\PlayerCardFeature;
 use Modules\SpatBridge\Http\Controllers\ActionController;
 use Modules\SpatBridge\Services\ClientResult;
 use Modules\SpatBridge\Services\NoteWriter;
@@ -675,6 +676,68 @@ class ActionControllerTest extends TestCase
         );
         $this->assertSame([], Thread::$created);
         $this->assertArrayHasKey($this->cacheKey(), FakeCache::$store);
+    }
+
+    /**
+     * @return array<string, array{0: array}>
+     */
+    public function notSuccessful(): array
+    {
+        return [
+            'success false' => [['success' => false]],
+            'success missing' => [['success' => null]],
+            'success a string' => [['success' => 'true']],
+        ];
+    }
+
+    /**
+     * @dataProvider notSuccessful
+     */
+    public function test_run_answer_without_success_true_is_an_error_with_no_note(array $extra): void
+    {
+        FakeCache::$store[$this->cacheKey()] = ['sections' => []];
+        $this->client->results[] = $this->realRun($extra);
+        $controller = $this->controller();
+        $this->previewed($controller);
+
+        $response = $controller->run($this->runRequest($this->user()));
+
+        $this->assertSame(
+            'error',
+            $this->json($response)['status']
+        );
+        $this->assertSame(
+            "WordPress didn't report the action as done. Check WordPress before trying again.",
+            $this->json($response)['msg']
+        );
+        $this->assertSame([], Thread::$created);
+        $this->assertArrayHasKey($this->cacheKey(), FakeCache::$store);
+    }
+
+    public function test_change_email_note_says_the_card_follows_the_tickets_address(): void
+    {
+        $this->client->results[] = $this->realRun([
+            'summary' => 'Changed jordan.smith@example.com to new@example.com',
+            'changes' => ['WordPress user #9: email → new@example.com'],
+        ]);
+        $controller = $this->controller(null, new PlayerCardFeature());
+        $params = '{"old_email":"jordan.smith@example.com","new_email":"new@example.com"}';
+        $request = ['feature' => 'player', 'action' => 'change_email', 'params' => $params];
+        $this->previewed($controller, null, $request);
+
+        $response = $controller->run($this->runRequest($this->user(), $request));
+
+        $this->assertSame('success', $this->json($response)['status']);
+        $this->assertCount(1, Thread::$created);
+        $this->assertSame(
+            NoteWriter::actionBody(
+                'Changed jordan.smith@example.com to new@example.com',
+                ['WordPress user #9: email → new@example.com'],
+                (new PlayerCardFeature())->noteFollowUp('change_email', [])
+            ),
+            Thread::$created[0][0]['body']
+        );
+        $this->assertStringContainsString('ARL League card', Thread::$created[0][0]['body']);
     }
 
     public function test_run_timeout_is_a_plain_error_with_no_note(): void

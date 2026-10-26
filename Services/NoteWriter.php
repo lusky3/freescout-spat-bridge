@@ -13,8 +13,9 @@ class NoteWriter
      * Note body for a completed action. Everything from WordPress is escaped.
      *
      * @param string[] $changes
+     * @param string|null $followUp A closing sentence, e.g. what to do next in FreeScout.
      */
-    public static function actionBody(string $summary, array $changes): string
+    public static function actionBody(string $summary, array $changes, ?string $followUp = null): string
     {
         $html = '<p>' . self::escape($summary) . '</p>';
         if ($changes !== []) {
@@ -23,6 +24,9 @@ class NoteWriter
                 $html .= '<li>' . self::escape((string) $change) . '</li>';
             }
             $html .= '</ul>';
+        }
+        if ($followUp !== null && $followUp !== '') {
+            $html .= '<p>' . self::escape($followUp) . '</p>';
         }
 
         return $html . '<p><small>' . self::escape(__('via ARL League')) . '</small></p>';

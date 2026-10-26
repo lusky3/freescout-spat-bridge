@@ -60,6 +60,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- An action counts as done only when WordPress answers `success: true`; any
+  other answer is shown as an error and adds no internal note.
+- After Change email, the internal note says the ARL League card follows the
+  ticket's email address, so the customer's email in FreeScout may need
+  updating to see the card again.
 - Sidebar dates (e-Transfers, waitlist) and the e-Transfer picker's results
   are shown in the viewing agent's FreeScout time zone instead of UTC; the
   waitlist offer deadline names its zone (e.g. "2:00 PM EDT"). Event notes

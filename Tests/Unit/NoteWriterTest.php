@@ -42,6 +42,18 @@ class NoteWriterTest extends TestCase
         $this->assertSame('<p>Done</p><p><small>via ARL League</small></p>', NoteWriter::actionBody('Done', []));
     }
 
+    public function test_action_body_with_a_follow_up_adds_an_escaped_paragraph_before_the_footer(): void
+    {
+        $this->assertSame(
+            '<p>Done</p><ul><li>x</li></ul><p>See &lt;here&gt;.</p><p><small>via ARL League</small></p>',
+            NoteWriter::actionBody('Done', ['x'], 'See <here>.')
+        );
+        $this->assertSame(
+            '<p>Done</p><p><small>via ARL League</small></p>',
+            NoteWriter::actionBody('Done', [], null)
+        );
+    }
+
     public function test_add_creates_a_note_thread_by_the_agent(): void
     {
         $customer = new \stdClass();

@@ -7,6 +7,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Modules\SpatBridge\Features\Feature;
 use Modules\SpatBridge\Features\FeatureRegistry;
+use Modules\SpatBridge\Features\AddsNoteFollowUp;
 use Modules\SpatBridge\Features\GuardsActionParams;
 use Modules\SpatBridge\Services\ActionPermissions;
 use Modules\SpatBridge\Services\ClientResult;
@@ -145,10 +146,22 @@ class ActionController extends Controller
         if (!empty($data['dry_run'])) {
             return $this->error(__("WordPress didn't run the action. Try again."), 200);
         }
+        // SPAT always sets success; anything else (a proxy's page, an older
+        // SPAT) is not proof the action ran, so no note says it did.
+        if (($data['success'] ?? null) !== true) {
+            return $this->error(
+                __("WordPress didn't report the action as done. Check WordPress before trying again."),
+                200
+            );
+        }
         $summary = $this->text($data, 'summary');
         $message = $summary === '' ? __('Done.') : $summary;
+        $followUp = $feature instanceof AddsNoteFollowUp
+            ? $feature->noteFollowUp($context['name'], $context['params'])
+            : null;
 
-        if (!$this->addNoteOnce($context, $key, $message, $this->changes($data), !empty($data['replayed']))) {
+        $replayed = !empty($data['replayed']);
+        if (!$this->addNoteOnce($context, $key, $message, $this->changes($data), $replayed, $followUp)) {
             $message .= ' ' . __("The internal note couldn't be added.");
         }
         $this->forgetCustomerCache($context['conversation']);
@@ -320,15 +333,22 @@ class ActionController extends Controller
      * @param string[] $changes
      * @return bool False when the note could not be written.
      */
-    private function addNoteOnce(array $context, string $key, string $summary, array $changes, bool $replayed): bool
-    {
+    private function addNoteOnce(
+        array $context,
+        string $key,
+        string $summary,
+        array $changes,
+        bool $replayed,
+        ?string $followUp = null
+    ): bool {
         $notedKey = 'spatbridge.noted.' . md5($key);
         if ($replayed && \Cache::get($notedKey) !== null) {
             return true;
         }
 
         try {
-            $this->notes->add($context['conversation'], $context['user'], NoteWriter::actionBody($summary, $changes));
+            $body = NoteWriter::actionBody($summary, $changes, $followUp);
+            $this->notes->add($context['conversation'], $context['user'], $body);
             \Cache::put($notedKey, 1, self::NOTED_TTL);
         } catch (\Throwable $e) {
             $this->logger->error('[SpatBridge] adding the action note failed: ' . $e->getMessage());

@@ -326,4 +326,16 @@ class PlayerCardFeatureTest extends TestCase
     {
         $this->assertNull((new PlayerCardFeature())->guardParams('rerun', ['order_id' => 5107], []));
     }
+
+    public function test_change_email_note_follow_up_explains_the_card_follows_the_ticket(): void
+    {
+        $feature = new PlayerCardFeature();
+
+        $this->assertSame(
+            "The ARL League card follows the ticket's email address. To see it here, "
+            . "update the customer's email in FreeScout to the new address.",
+            $feature->noteFollowUp('change_email', ['new_email' => 'new@example.com'])
+        );
+        $this->assertNull($feature->noteFollowUp('rerun', ['order_id' => 5107]));
+    }
 }

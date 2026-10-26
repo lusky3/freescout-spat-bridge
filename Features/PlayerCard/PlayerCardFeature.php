@@ -2,6 +2,7 @@
 
 namespace Modules\SpatBridge\Features\PlayerCard;
 
+use Modules\SpatBridge\Features\AddsNoteFollowUp;
 use Modules\SpatBridge\Features\Feature;
 use Modules\SpatBridge\Features\GuardsActionParams;
 use Modules\SpatBridge\Features\Panel;
@@ -16,7 +17,7 @@ use Modules\SpatBridge\Features\RowAction;
  * Wire data comes from another system, so every key may be missing and every
  * value may have the wrong type; nothing here throws on that.
  */
-final class PlayerCardFeature implements Feature, GuardsActionParams
+final class PlayerCardFeature implements Feature, GuardsActionParams, AddsNoteFollowUp
 {
     private const SEP = ' · ';
     private const EMAIL_FORM_VIEW = 'spatbridge::action.change_email_form';
@@ -150,6 +151,21 @@ final class PlayerCardFeature implements Feature, GuardsActionParams
     public function mapConfirmCodes(string $action, array $codes, array $params): array
     {
         return $params;
+    }
+
+    /**
+     * After a change of email WordPress no longer knows the ticket's address,
+     * so the card disappears from this ticket until the customer's email in
+     * FreeScout is updated too.
+     */
+    public function noteFollowUp(string $action, array $params): ?string
+    {
+        if ($action !== 'change_email') {
+            return null;
+        }
+
+        return __("The ARL League card follows the ticket's email address. To see it here, "
+            . "update the customer's email in FreeScout to the new address.");
     }
 
     private function playerRow(array $player, ?array $current, string $season, string $email): PanelRow
