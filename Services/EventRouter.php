@@ -18,6 +18,7 @@ class EventRouter
     public const TAGGED = 'tagged';
     public const TAG_SKIPPED = 'tag_skipped';
     public const NOTES_TAGS_OFF = 'notes_tags_off';
+    public const IGNORED_UNKNOWN_TYPE = 'ignored_unknown_type';
     public const CREATED = 'created';
     public const CREATED_TAG_SKIPPED = 'created_tag_skipped';
     public const IGNORED = 'ignored';

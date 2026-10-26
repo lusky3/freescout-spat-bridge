@@ -70,6 +70,7 @@ final class EventCatalog
         'tagged' => 'Tag updated, no note (notes are off)',
         'tag_skipped' => 'Tag skipped, no note (notes are off)',
         'notes_tags_off' => 'Nothing done (notes and tags are off)',
+        'ignored_unknown_type' => 'Ignored (event type not known to this version)',
         'created' => 'Ticket created',
         'created_tag_skipped' => 'Ticket created, tag skipped',
         'ignored' => 'Ignored (no open ticket)',

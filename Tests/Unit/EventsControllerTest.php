@@ -178,7 +178,11 @@ class EventsControllerTest extends TestCase
         return [
             'not json' => ['{nope'],
             'json list' => ['[1,2]'],
-            'unknown type' => [$with('type', 'order.created')],
+            'type not a string' => [$with('type', 5)],
+            'empty type' => [$with('type', '')],
+            'malformed type' => [$with('type', 'Order Created!')],
+            'overlong type' => [$with('type', str_repeat('a', 65))],
+            'missing type' => [$without('type')],
             'bad uuid' => [$with('id', 'not-a-uuid')],
             'uuid with extra' => [$with('id', self::ID . '0')],
             'missing id' => [$without('id')],
@@ -204,9 +208,53 @@ class EventsControllerTest extends TestCase
         $this->assertSame([], $this->router->events);
     }
 
-    public function test_oversized_body_is_400(): void
+    public function test_oversized_body_is_413(): void
     {
         $body = $this->body(['data' => ['from_name' => str_repeat('x', 70000)]]);
+
+        $this->assertSame(413, $this->receive($this->request($body))->getStatusCode());
+        $this->assertSame([], $this->store->rows);
+    }
+
+    public function test_body_size_is_checked_before_the_signature(): void
+    {
+        // A bad signature would be 403; 413 shows no HMAC was computed first.
+        $body = $this->body(['data' => ['from_name' => str_repeat('x', 70000)]]);
+
+        $response = $this->receive($this->request($body, null, str_repeat('0', 64)));
+
+        $this->assertSame(413, $response->getStatusCode());
+        $this->assertSame([], $this->store->rows);
+    }
+
+    public function test_declared_content_length_over_the_limit_is_413_before_reading_the_body(): void
+    {
+        $request = $this->request($this->body());
+        $request->server->set('CONTENT_LENGTH', '70000');
+        $request->headers->set('Content-Length', '70000');
+
+        $this->assertSame(413, $this->receive($request)->getStatusCode());
+        $this->assertSame([], $this->store->rows);
+    }
+
+    public function test_unknown_event_type_is_stored_acknowledged_and_ignored(): void
+    {
+        $body = $this->body(['type' => 'order.created']);
+
+        $response = $this->receive($this->request($body));
+
+        // 200 so WordPress neither retries nor drops it as failed; nothing routed.
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame(['status' => 'ok', 'outcome' => 'ignored_unknown_type'], $response->getData(true));
+        $this->assertSame([], $this->router->events);
+        $this->assertSame('order.created', $this->store->rows[1]['event']['type']);
+        $this->assertSame([[1, 'ignored_unknown_type', [], '']], $this->store->finished);
+        $this->assertTrue($this->logger->hasWarningThatContains('order.created'));
+    }
+
+    public function test_unknown_event_type_with_bad_fields_is_still_400(): void
+    {
+        $body = $this->body(['type' => 'order.created', 'id' => 'nope']);
 
         $this->assertSame(400, $this->receive($this->request($body))->getStatusCode());
         $this->assertSame([], $this->store->rows);

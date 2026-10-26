@@ -60,6 +60,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- An event of a type this version doesn't know is kept in the event log as
+  "Ignored (event type not known to this version)" and answered 200, so
+  WordPress doesn't drop it as failed; no note or ticket is made.
+- The event receiver refuses a body over 64 KB (413) before checking its
+  signature.
 - The event log no longer says "Note added" when event notes are switched
   off: it records "Tag updated, no note", "Tag skipped, no note" or, with
   notes and tags both off, "Nothing done".

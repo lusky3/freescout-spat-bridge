@@ -23,6 +23,8 @@ class EventsController extends Controller
 {
     // The payload column is TEXT (64 KB).
     private const MAX_BODY = 65535;
+    // Event types WordPress may add later; known ones are in EventCatalog.
+    private const TYPE = '/^[a-z0-9][a-z0-9_.-]{0,63}$/';
     private const UUID = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i';
     private const ISO_8601 = '/^(\d{4})-(\d{2})-(\d{2})T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})$/';
 
@@ -58,7 +60,16 @@ class EventsController extends Controller
             return $this->error('The ARL League event receiver is not configured.', 503);
         }
 
+        // Size first, so an oversized body costs no HMAC.
+        $declared = $request->server('CONTENT_LENGTH');
+        if (is_numeric($declared) && (int) $declared > self::MAX_BODY) {
+            return $this->error('Event too large.', 413);
+        }
         $body = (string) $request->getContent();
+        if (strlen($body) > self::MAX_BODY) {
+            return $this->error('Event too large.', 413);
+        }
+
         $signed = Signer::verify(
             (string) $request->header(Signer::HEADER_TIMESTAMP, ''),
             (string) $request->header(Signer::HEADER_SIGNATURE, ''),
@@ -87,11 +98,14 @@ class EventsController extends Controller
             return new JsonResponse(['status' => 'duplicate']);
         }
 
-        try {
-            $result = $this->router->route($event);
-        } catch (\Throwable $e) {
-            $this->logger->error('[SpatBridge] routing event ' . $event['id'] . ' failed: ' . $e->getMessage());
-            $result = ['outcome' => EventRouter::ERROR, 'conversation_ids' => [], 'detail' => $e->getMessage()];
+        if (!$this->catalog->has($event['type'])) {
+            // A type this bridge doesn't know yet (a newer WordPress): kept in
+            // the log and acknowledged, so WordPress neither retries it nor
+            // drops it as failed. No note, no ticket.
+            $this->logger->warning('[SpatBridge] event ' . $event['id'] . ' has an unknown type: ' . $event['type']);
+            $result = ['outcome' => EventRouter::IGNORED_UNKNOWN_TYPE, 'conversation_ids' => [], 'detail' => ''];
+        } else {
+            $result = $this->routeEvent($event);
         }
 
         try {
@@ -111,13 +125,25 @@ class EventsController extends Controller
     }
 
     /**
+     * @return array{outcome: string, conversation_ids: int[], detail: string}
+     */
+    private function routeEvent(array $event): array
+    {
+        try {
+            $result = $this->router->route($event);
+        } catch (\Throwable $e) {
+            $this->logger->error('[SpatBridge] routing event ' . $event['id'] . ' failed: ' . $e->getMessage());
+            $result = ['outcome' => EventRouter::ERROR, 'conversation_ids' => [], 'detail' => $e->getMessage()];
+        }
+
+        return $result;
+    }
+
+    /**
      * @return array{id: string, type: string, email: string, occurred_at: string, data: array}|null
      */
     private function parse(string $body): ?array
     {
-        if (strlen($body) > self::MAX_BODY) {
-            return null;
-        }
         $decoded = json_decode($body, true);
         if (!is_array($decoded)) {
             return null;
@@ -132,7 +158,7 @@ class EventsController extends Controller
         if (!is_string($id) || !preg_match(self::UUID, $id)) {
             return null;
         }
-        if (!is_string($type) || !$this->catalog->has($type)) {
+        if (!is_string($type) || !preg_match(self::TYPE, $type)) {
             return null;
         }
         if (!is_string($email)) {
