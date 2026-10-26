@@ -3,7 +3,8 @@
 # Adapted from freescout-module-manager/docker/docker-compose.yml. See that
 # file for the full rationale (weak throwaway credentials, the chmod
 # workaround, the circular bind-mount guard) — unchanged here except for
-# this module's own name and mount path.
+# this module's own name and mount path, and a chmod that leaves the
+# bind-mounted module alone (see the app service).
 
 services:
   db:
@@ -26,7 +27,10 @@ services:
       - ../:/var/www/html/Modules/SpatBridge
       - module_repo_docker_dir_excluded:/var/www/html/Modules/SpatBridge/docker
     working_dir: /var/www/html
-    command: ["sh", "-c", "chmod -R 777 storage bootstrap/cache Modules && php-fpm"]
+    # Modules/SpatBridge is the bind-mounted host repo: chmodding it would flip
+    # the modes of every tracked file (and .git) on the host, so only
+    # FreeScout's own writable paths are opened up, as e2e/ does.
+    command: ["sh", "-c", "mkdir -p public/css/builds public/js/builds; chmod -R 777 storage bootstrap/cache public/css/builds public/js/builds 2>/dev/null; php-fpm"]
     depends_on:
       - db
 

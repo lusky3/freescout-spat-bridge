@@ -119,6 +119,8 @@ class SpatClientTest extends TestCase
             ],
             'rate limited' => [$this->errorResponse(429, 'spat_freescout_rate_limited'), 429, 'rate_limited'],
             'server error' => [new Response(500, [], 'boom'), 500, 'http_error'],
+            'spat without the routes' => [$this->errorResponse(404, 'rest_no_route'), 404, 'spat_outdated'],
+            'plain 404 page' => [new Response(404, [], '<html>Not Found</html>'), 404, 'http_error'],
         ];
     }
 
@@ -175,5 +177,31 @@ class SpatClientTest extends TestCase
         $this->assertSame(0, $result->status());
         $this->assertSame(0, $result->latencyMs());
         $this->assertCount(0, $this->history);
+    }
+
+    public function test_redirect_is_reported_not_followed(): void
+    {
+        $result = $this->client([
+            new Response(301, ['Location' => 'https://www.wp.example/wp-json/spat/v1/freescout/ping']),
+            new Response(200, [], '{"spat_version":"1.1.3"}'),
+        ])->ping();
+
+        $this->assertCount(1, $this->history);
+        $this->assertFalse($this->history[0]['options']['allow_redirects']);
+        $this->assertFalse($result->ok());
+        $this->assertSame(301, $result->status());
+        $this->assertSame('redirected', $result->errorCode());
+        $this->assertSame('https://www.wp.example', $result->detail());
+    }
+
+    public function test_redirect_elsewhere_keeps_the_whole_location(): void
+    {
+        $result = $this->client([
+            new Response(302, ['Location' => 'https://login.example/sso']),
+        ])->customer('a@example.com');
+
+        $this->assertSame('redirected', $result->errorCode());
+        $this->assertSame(302, $result->status());
+        $this->assertSame('https://login.example/sso', $result->detail());
     }
 }

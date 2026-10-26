@@ -72,8 +72,12 @@ class SpatClient
                 'timeout' => self::TIMEOUT,
                 'connect_timeout' => self::CONNECT_TIMEOUT,
                 'http_errors' => false,
+                // A redirect would turn the signed POST into a GET (301/302) or
+                // send the secret's signature elsewhere; report it instead.
+                'allow_redirects' => false,
             ]);
             $status = (int) $response->getStatusCode();
+            $location = $response->getHeaderLine('Location');
             $decoded = json_decode((string) $response->getBody(), true);
         } catch (\Throwable $e) {
             $code = $this->isTimeout($e) ? 'timeout' : 'network';
@@ -91,6 +95,11 @@ class SpatClient
                 return ClientResult::failure('bad_response', $status, $latency);
             }
             return ClientResult::success($status, $decoded, $latency);
+        }
+
+        if ($status >= 300 && $status < 400) {
+            $this->logger->warning('[SpatBridge] ' . $path . ' redirected (HTTP ' . $status . ') to ' . $location);
+            return ClientResult::failure('redirected', $status, $latency, $this->siteUrlFrom($location, $path));
         }
 
         $wpCode = is_array($decoded) && isset($decoded['code']) && is_string($decoded['code']) ? $decoded['code'] : '';
@@ -116,7 +125,24 @@ class SpatClient
         if ($status === 429) {
             return 'rate_limited';
         }
+        if ($status === 404 && $wpCode === 'rest_no_route') {
+            return 'spat_outdated';
+        }
         return 'http_error';
+    }
+
+    /**
+     * The redirect target with the route path stripped, i.e. the site URL the
+     * module should be configured with.
+     */
+    private function siteUrlFrom(string $location, string $path): string
+    {
+        $location = trim($location);
+        if ($location !== '' && substr($location, -strlen($path)) === $path) {
+            return substr($location, 0, -strlen($path));
+        }
+
+        return $location;
     }
 
     private function isTimeout(\Throwable $e): bool

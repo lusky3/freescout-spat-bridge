@@ -20,3 +20,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   game, and registration attention and history.
 - Release workflow and release guard: a release needs a version bump and a
   changelog entry, and PRs that change shipped files need a changelog entry.
+
+### Fixed
+
+- The settings page script carries FreeScout's CSP nonce and has no inline
+  handlers, so Test connection, the secret's Show toggle and the card order
+  buttons work in the browser.
+- The player card says when WordPress reports the player or registration data
+  as failed or not enabled, instead of silently leaving it out.
+- Test connection names an outdated SportsPress Admin Tools (no FreeScout
+  routes) and a site URL that redirects; redirects are no longer followed.
+- The player card summary keeps the player and team when registration needs
+  attention.

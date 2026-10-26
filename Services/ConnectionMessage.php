@@ -35,6 +35,13 @@ final class ConnectionMessage
                 return "Couldn't reach WordPress. Check the site URL.";
             case 'timeout':
                 return "WordPress didn't answer within 3 seconds.";
+            case 'spat_outdated':
+                return "WordPress answered, but SPAT doesn't have the FreeScout routes. "
+                    . 'Update SportsPress Admin Tools.';
+            case 'redirected':
+                return $result->detail() === ''
+                    ? 'WordPress redirected the request. Check the site URL.'
+                    : 'WordPress redirected to ' . $result->detail() . '. Use that URL as the site URL.';
             case 'http_error':
                 return 'WordPress returned an error (HTTP ' . $result->status() . ').';
             case 'bad_response':

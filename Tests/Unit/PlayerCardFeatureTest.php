@@ -121,6 +121,13 @@ class PlayerCardFeatureTest extends TestCase
         $this->assertSame('bad', $row->tone());
         $this->assertSame(['Last outcome: name rejected'], $row->lines());
         $this->assertTrue($panel->attention());
+        $this->assertSame('#17 Jordan Smith · Ducks — Registration needs attention', $panel->summary());
+    }
+
+    public function test_attention_summary_without_players_is_the_plain_line(): void
+    {
+        $panel = (new PlayerCardFeature())->present($this->sections(null, $this->registration()));
+
         $this->assertSame('Registration needs attention', $panel->summary());
     }
 

@@ -25,6 +25,9 @@ class ConnectionMessageTest extends TestCase
             ['timeout', "WordPress didn't answer within 3 seconds."],
             ['bad_response', 'WordPress answered, but not with the expected data. '
                 . 'Is SportsPress Admin Tools up to date?'],
+            ['spat_outdated', "WordPress answered, but SPAT doesn't have the FreeScout routes. "
+                . 'Update SportsPress Admin Tools.'],
+            ['redirected', 'WordPress redirected the request. Check the site URL.'],
         ];
     }
 
@@ -54,5 +57,13 @@ class ConnectionMessageTest extends TestCase
     public function test_unknown_error_code_falls_back_to_a_generic_line(): void
     {
         $this->assertSame("Couldn't reach WordPress.", ConnectionMessage::describe(ClientResult::failure('weird')));
+    }
+
+    public function test_redirected_names_the_target(): void
+    {
+        $this->assertSame(
+            'WordPress redirected to https://www.wp.example. Use that URL as the site URL.',
+            ConnectionMessage::describe(ClientResult::failure('redirected', 301, 12, 'https://www.wp.example'))
+        );
     }
 }

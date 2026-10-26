@@ -72,7 +72,10 @@ final class PlayerCardFeature implements Feature
             return null;
         }
 
-        $summary = $needsAttention ? __('Registration needs attention') : implode(', ', $summaries);
+        $summary = implode(', ', $summaries);
+        if ($needsAttention) {
+            $summary .= ($summary === '' ? '' : ' — ') . __('Registration needs attention');
+        }
 
         return new Panel(
             $this->key(),

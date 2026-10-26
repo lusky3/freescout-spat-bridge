@@ -18,14 +18,23 @@ final class ClientResult
     private $errorCode;
     /** @var int */
     private $latencyMs;
+    /** @var string */
+    private $detail;
 
-    private function __construct(bool $ok, int $status, ?array $data, string $errorCode, int $latencyMs)
-    {
+    private function __construct(
+        bool $ok,
+        int $status,
+        ?array $data,
+        string $errorCode,
+        int $latencyMs,
+        string $detail = ''
+    ) {
         $this->ok = $ok;
         $this->status = $status;
         $this->data = $data;
         $this->errorCode = $errorCode;
         $this->latencyMs = $latencyMs;
+        $this->detail = $detail;
     }
 
     public static function success(int $status, array $data, int $latencyMs): self
@@ -33,9 +42,12 @@ final class ClientResult
         return new self(true, $status, $data, '', $latencyMs);
     }
 
-    public static function failure(string $errorCode, int $status = 0, int $latencyMs = 0): self
+    /**
+     * @param string $detail Extra context for the message, e.g. the redirect target for `redirected`.
+     */
+    public static function failure(string $errorCode, int $status = 0, int $latencyMs = 0, string $detail = ''): self
     {
-        return new self(false, $status, null, $errorCode, $latencyMs);
+        return new self(false, $status, null, $errorCode, $latencyMs, $detail);
     }
 
     public function ok(): bool
@@ -56,7 +68,7 @@ final class ClientResult
 
     /**
      * '' when ok; otherwise one of not_configured, network, timeout, bad_signature, clock_skew,
-     * wp_not_configured, rate_limited, http_error, bad_response.
+     * wp_not_configured, rate_limited, spat_outdated, redirected, http_error, bad_response.
      */
     public function errorCode(): string
     {
@@ -66,5 +78,11 @@ final class ClientResult
     public function latencyMs(): int
     {
         return $this->latencyMs;
+    }
+
+    /** Extra context for the error code; '' when there is none. */
+    public function detail(): string
+    {
+        return $this->detail;
     }
 }

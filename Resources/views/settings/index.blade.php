@@ -30,7 +30,7 @@
             <input type="password" id="spatbridge_shared_secret" name="shared_secret" class="form-control"
                    autocomplete="off" value="{{ $hasSecret ? str_repeat('•', 16) : '' }}">
             <label style="font-weight: normal; margin-top: 6px;">
-                <input type="checkbox" onclick="document.getElementById('spatbridge_shared_secret').type = this.checked ? 'text' : 'password';">
+                <input type="checkbox" id="spatbridge_show_secret">
                 {{ __('Show') }}
             </label>
             <span class="help-block">{{ __('Must match the value in WP → SportsPress Admin Tools → FreeScout. Minimum 32 characters. Leave the bullets in place to keep the existing secret.') }}</span>
@@ -143,10 +143,16 @@
     </div>
 </form>
 
-<script>
+{{-- FreeScout's CSP allows inline scripts only with its nonce, and no inline on*= handlers at all. --}}
+<script {!! \Helper::cspNonceAttr() !!}>
     (function () {
         var btn = document.getElementById('spatbridge-test');
         var out = document.getElementById('spatbridge-test-result');
+        var secret = document.getElementById('spatbridge_shared_secret');
+
+        document.getElementById('spatbridge_show_secret').addEventListener('change', function () {
+            secret.type = this.checked ? 'text' : 'password';
+        });
 
         function paintWpSide(providers) {
             var rows = document.querySelectorAll('.spatbridge-feature');

@@ -4,6 +4,7 @@ namespace Tests\Unit;
 
 use Modules\SpatBridge\Features\Feature;
 use Modules\SpatBridge\Features\Panel;
+use Modules\SpatBridge\Features\PanelRow;
 use Modules\SpatBridge\Services\ClientResult;
 use Modules\SpatBridge\Services\SidebarBuilder;
 use PHPUnit\Framework\TestCase;
@@ -11,16 +12,18 @@ use Psr\Log\AbstractLogger;
 
 class SidebarBuilderTest extends TestCase
 {
-    private function feature(string $key, $panel): Feature
+    private function feature(string $key, $panel, array $providerKeys = []): Feature
     {
-        return new class ($key, $panel) implements Feature {
+        return new class ($key, $panel, $providerKeys) implements Feature {
             private $key;
             private $panel;
+            private $providerKeys;
 
-            public function __construct(string $key, $panel)
+            public function __construct(string $key, $panel, array $providerKeys)
             {
                 $this->key = $key;
                 $this->panel = $panel;
+                $this->providerKeys = $providerKeys;
             }
 
             public function key(): string
@@ -35,7 +38,7 @@ class SidebarBuilderTest extends TestCase
 
             public function providerKeys(): array
             {
-                return [];
+                return $this->providerKeys;
             }
 
             public function present(array $sections): ?Panel
@@ -137,5 +140,74 @@ class SidebarBuilderTest extends TestCase
         $this->assertCount(1, $logger->records);
         $this->assertStringContainsString('[SpatBridge]', $logger->records[0][1]);
         $this->assertStringContainsString('boom', $logger->records[0][1]);
+    }
+
+    private function withMissing(array $missing): ClientResult
+    {
+        return ClientResult::success(200, ['sections' => [], 'missing' => $missing], 5);
+    }
+
+    /**
+     * @return string[]
+     */
+    private function lines(Panel $panel): array
+    {
+        $lines = [];
+        foreach ($panel->rows() as $row) {
+            $lines = array_merge($lines, $row->lines());
+        }
+
+        return $lines;
+    }
+
+    public function test_errored_provider_keeps_the_panel_with_a_muted_line(): void
+    {
+        $builder = new SidebarBuilder($this->logger());
+        $vm = $builder->build($this->withMissing(['player' => 'error']), [
+            $this->feature('player', null, ['player', 'registration']),
+        ]);
+
+        $this->assertSame('ok', $vm['state']);
+        $this->assertCount(1, $vm['panels']);
+        $panel = $vm['panels'][0];
+        $this->assertSame('player', $panel->key());
+        $this->assertSame('player', $panel->label());
+        $this->assertSame(['Player info unavailable (WordPress error)'], $this->lines($panel));
+        $this->assertSame('', $panel->rows()[0]->title());
+        $this->assertSame('muted', $panel->rows()[0]->tone());
+        $this->assertNull($panel->rows()[0]->badge());
+    }
+
+    public function test_not_registered_provider_line_is_prepended_to_the_feature_rows(): void
+    {
+        $registrationRow = new PanelRow('Order #5107', ['Last outcome: name rejected'], 'Check', 'bad');
+        $builder = new SidebarBuilder($this->logger());
+        $vm = $builder->build($this->withMissing(['player' => 'not_registered', 'waitlist' => 'not_registered']), [
+            $this->feature(
+                'player',
+                new Panel('player', 'Player', [$registrationRow], 'Registration needs attention', true),
+                ['player', 'registration']
+            ),
+        ]);
+
+        $panel = $vm['panels'][0];
+        $this->assertCount(2, $panel->rows());
+        $this->assertSame(['Player info not available — not enabled in WordPress'], $panel->rows()[0]->lines());
+        $this->assertSame($registrationRow, $panel->rows()[1]);
+        $this->assertSame('Registration needs attention', $panel->summary());
+        $this->assertTrue($panel->attention());
+        $this->assertSame('player', $vm['activeTab']);
+    }
+
+    public function test_missing_providers_the_feature_does_not_read_change_nothing(): void
+    {
+        $panel = new Panel('player', 'Player', []);
+        $builder = new SidebarBuilder($this->logger());
+        $vm = $builder->build($this->withMissing(['waitlist' => 'not_registered', 'etransfers' => 'error']), [
+            $this->feature('player', $panel, ['player', 'registration']),
+            $this->feature('other', null, ['player']),
+        ]);
+
+        $this->assertSame([$panel], $vm['panels']);
     }
 }

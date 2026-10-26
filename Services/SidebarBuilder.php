@@ -4,6 +4,7 @@ namespace Modules\SpatBridge\Services;
 
 use Modules\SpatBridge\Features\Feature;
 use Modules\SpatBridge\Features\Panel;
+use Modules\SpatBridge\Features\PanelRow;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -35,11 +36,14 @@ final class SidebarBuilder
         $sections = is_array($data) && isset($data['sections']) && is_array($data['sections'])
             ? $data['sections']
             : [];
+        $missing = is_array($data) && isset($data['missing']) && is_array($data['missing'])
+            ? $data['missing']
+            : [];
 
         $panels = [];
         foreach ($features as $feature) {
             try {
-                $panel = $feature->present($sections);
+                $panel = $this->withMissingRows($feature, $feature->present($sections), $missing);
             } catch (\Throwable $e) {
                 $this->logger->error('[SpatBridge] feature ' . $feature->key() . ' failed: ' . $e->getMessage());
                 continue;
@@ -50,6 +54,41 @@ final class SidebarBuilder
         }
 
         return $this->model($panels === [] ? 'empty' : 'ok', $panels);
+    }
+
+    /**
+     * A provider the feature reads that WordPress reports as failed or not
+     * enabled gets a muted line on the feature's panel, so the agent doesn't
+     * read a missing section as "no data". The panel is created for it when
+     * the feature had nothing else to show.
+     */
+    private function withMissingRows(Feature $feature, ?Panel $panel, array $missing): ?Panel
+    {
+        $rows = [];
+        foreach ($feature->providerKeys() as $provider) {
+            $reason = isset($missing[$provider]) && is_string($missing[$provider]) ? $missing[$provider] : '';
+            $label = ucfirst(str_replace('_', ' ', $provider));
+            if ($reason === 'error') {
+                $rows[] = new PanelRow('', [$label . ' ' . __('info unavailable (WordPress error)')]);
+            } elseif ($reason === 'not_registered') {
+                $rows[] = new PanelRow('', [$label . ' ' . __('info not available — not enabled in WordPress')]);
+            }
+        }
+
+        if ($rows === []) {
+            return $panel;
+        }
+        if ($panel === null) {
+            return new Panel($feature->key(), $feature->label(), $rows);
+        }
+
+        return new Panel(
+            $panel->key(),
+            $panel->label(),
+            array_merge($rows, $panel->rows()),
+            $panel->summary(),
+            $panel->attention()
+        );
     }
 
     /**
