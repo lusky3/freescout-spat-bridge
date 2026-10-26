@@ -62,25 +62,77 @@ class WaitlistFeatureTest extends TestCase
         $this->assertSame(['On waitlist since Aug 3'], $row->lines());
     }
 
+    private function in(int $seconds): string
+    {
+        return gmdate('Y-m-d\TH:i:s\Z', time() + $seconds);
+    }
+
+    private function offered(string $expiresAt)
+    {
+        return $this->row(['status' => 'offered', 'position' => 'player', 'expires_at' => $expiresAt]);
+    }
+
     public function test_an_offered_row(): void
     {
-        $row = $this->row([
-            'status' => 'offered', 'position' => 'player',
-            'offered_at' => '2026-10-25T18:00:00Z', 'expires_at' => '2026-10-27T18:00:00Z',
-        ]);
+        $row = $this->offered($this->in(2 * 3600 + 60));
 
         $this->assertSame('S2026 · Player', $row->title());
-        $this->assertSame('Offered', $row->badge());
+        $this->assertSame('Offer sent', $row->badge());
         $this->assertSame('warn', $row->tone());
-        $this->assertSame(['Offer expires Oct 27, 6:00 PM UTC'], $row->lines());
+        $this->assertSame(['Expires in 2 hours'], $row->lines());
+    }
+
+    public function test_the_live_offer_line_matches_the_splm_waitlist_thresholds(): void
+    {
+        $this->assertSame(['Expires in less than an hour'], $this->offered($this->in(600))->lines());
+        $this->assertSame(['Expires in 1 hour'], $this->offered($this->in(3600 + 60))->lines());
+        $this->assertSame(['Expires in 2 hours'], $this->offered($this->in(7200 + 60))->lines());
+        $this->assertSame(['Expires in 23 hours'], $this->offered($this->in(23 * 3600 + 60))->lines());
+        $this->assertSame(['Expires in 1 day'], $this->offered($this->in(24 * 3600 + 60))->lines());
+        $this->assertSame(['Expires in 2 days'], $this->offered($this->in(2 * 86400 + 60))->lines());
     }
 
     public function test_an_offered_row_without_a_deadline_falls_back_to_the_since_line(): void
     {
-        $row = $this->row(['status' => 'offered']);
+        foreach ([null, ''] as $missing) {
+            $row = $this->row(['status' => 'offered', 'expires_at' => $missing]);
 
-        $this->assertSame('Offered', $row->badge());
+            $this->assertSame('Offer sent', $row->badge());
+            $this->assertSame('warn', $row->tone());
+            $this->assertSame(['On waitlist since Aug 3'], $row->lines());
+        }
+    }
+
+    public function test_an_offer_past_its_deadline_reads_as_expired_but_keeps_its_actions(): void
+    {
+        $panel = $this->present([$this->entry(['status' => 'offered', 'expires_at' => $this->in(-3600)])]);
+        $row = $panel->rows()[0];
+
+        $this->assertSame('Offer expired', $row->badge());
+        $this->assertSame('bad', $row->tone());
         $this->assertSame(['On waitlist since Aug 3'], $row->lines());
+        $this->assertSame(['Re-offer…', 'Withdraw offer'], $this->labels($row));
+        $this->assertTrue($panel->attention());
+        $this->assertStringStartsWith('Offered S2026 Goalie, expires ', $panel->summary());
+    }
+
+    public function test_a_deadline_of_exactly_now_is_expired(): void
+    {
+        $row = $this->offered($this->in(0));
+
+        $this->assertSame('Offer expired', $row->badge());
+        $this->assertSame('bad', $row->tone());
+    }
+
+    public function test_an_unparseable_deadline_shows_the_raw_text_as_sent(): void
+    {
+        $panel = $this->present([$this->entry(['status' => 'offered', 'expires_at' => 'next <b>week'])]);
+        $row = $panel->rows()[0];
+
+        $this->assertSame('Offer sent', $row->badge());
+        $this->assertSame('warn', $row->tone());
+        $this->assertSame(['Expires next <b>week'], $row->lines());
+        $this->assertFalse($panel->attention());
     }
 
     public function test_an_expired_row(): void
@@ -146,8 +198,10 @@ class WaitlistFeatureTest extends TestCase
         $this->assertContains(self::NO_TARGET, $expired->lines());
         $this->assertSame([], $expired->actions());
 
-        $offered = $this->row(['status' => 'offered', 'has_target' => false, 'expires_at' => '2026-10-27T18:00:00Z']);
-        $this->assertSame(['Offer expires Oct 27, 6:00 PM UTC'], $offered->lines());
+        $offered = $this->row([
+            'status' => 'offered', 'has_target' => false, 'expires_at' => $this->in(2 * 86400 + 60),
+        ]);
+        $this->assertSame(['Expires in 2 days'], $offered->lines());
         $this->assertSame(['Re-offer…', 'Withdraw offer'], $this->labels($offered));
     }
 
@@ -155,7 +209,7 @@ class WaitlistFeatureTest extends TestCase
     {
         $panel = $this->present([
             $this->entry(['id' => 1, 'season' => 'S2025', 'status' => 'claimed']),
-            $this->entry(['status' => 'offered', 'expires_at' => '2026-10-27T18:00:00Z']),
+            $this->entry(['status' => 'offered', 'expires_at' => '2099-10-27T18:00:00Z']),
         ]);
 
         $this->assertSame('Offered S2026 Goalie, expires Oct 27, 6:00 PM UTC', $panel->summary());
@@ -233,7 +287,7 @@ class WaitlistFeatureTest extends TestCase
         $this->assertSame([], $row->actions());
 
         $offered = $this->row(['status' => 'offered', 'expires_at' => 'garbage', 'created_at' => null]);
-        $this->assertSame([], $offered->lines());
+        $this->assertSame(['Expires garbage'], $offered->lines());
         $this->assertNotNull($feature->previewOverride('offer', []));
     }
 }

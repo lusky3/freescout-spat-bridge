@@ -65,8 +65,9 @@ final class WaitlistFeature implements Feature
             if ($status !== 'offered' && $status !== 'claimed' && $queued === null) {
                 $queued = $entry;
             }
-            $expired = $expired || $status === 'expired';
-            $rows[] = $this->row($entry, $status);
+            $row = $this->row($entry, $status);
+            $expired = $expired || $row->tone() === 'bad';
+            $rows[] = $row;
         }
 
         if ($rows === []) {
@@ -93,17 +94,19 @@ final class WaitlistFeature implements Feature
     private function summary(?array $offered, ?array $queued): ?string
     {
         if ($offered !== null) {
-            $line = __('Offered') . ' ' . $this->join([
+            $what = $this->join([
                 $this->str($offered, 'season'),
                 $this->position($this->str($offered, 'position')),
             ], ' ');
             $expires = $this->dateTime($this->str($offered, 'expires_at'));
 
-            return rtrim($line) . ($expires === '' ? '' : ', ' . __('expires') . ' ' . $expires);
+            return $expires === ''
+                ? sprintf(__('Offered %s'), $what)
+                : sprintf(__('Offered %s, expires %s'), $what, $expires);
         }
 
         if ($queued !== null && $this->str($queued, 'season') !== '') {
-            return __('On the') . ' ' . $this->str($queued, 'season') . ' ' . __('waitlist');
+            return sprintf(__('On the %s waitlist'), $this->str($queued, 'season'));
         }
 
         return null;
@@ -116,10 +119,22 @@ final class WaitlistFeature implements Feature
             $this->position($this->str($entry, 'position')),
         ], self::SEP);
 
+        $badge = __('On waitlist');
+        $tone = 'muted';
+        $live = '';
         switch ($status) {
             case 'offered':
-                $badge = __('Offered');
+                $badge = __('Offer sent');
                 $tone = 'warn';
+                $expiresAt = $this->str($entry, 'expires_at');
+                $target = $expiresAt === '' ? false : strtotime($expiresAt);
+                if ($target !== false && $target <= time()) {
+                    $badge = __('Offer expired');
+                    $tone = 'bad';
+                } elseif ($expiresAt !== '') {
+                    // An unparseable deadline is shown as sent, not as passed.
+                    $live = __('Expires') . ' ' . ($target === false ? $expiresAt : $this->relative($target));
+                }
                 break;
             case 'expired':
                 $badge = __('Offer expired');
@@ -129,15 +144,11 @@ final class WaitlistFeature implements Feature
                 $badge = __('Accepted');
                 $tone = 'ok';
                 break;
-            default:
-                $badge = __('On waitlist');
-                $tone = 'muted';
         }
 
         $lines = [];
-        $expires = $status === 'offered' ? $this->dateTime($this->str($entry, 'expires_at')) : '';
-        if ($expires !== '') {
-            $lines[] = __('Offer expires') . ' ' . $expires;
+        if ($live !== '') {
+            $lines[] = $live;
         } else {
             $since = $this->date($this->str($entry, 'created_at'));
             if ($since !== '') {
@@ -182,6 +193,27 @@ final class WaitlistFeature implements Feature
         }
 
         return $actions;
+    }
+
+    /**
+     * Same thresholds and rounding as SplmWaitlist's EntryRenderer.
+     */
+    private function relative(int $target): string
+    {
+        $diff = $target - time();
+        if ($diff <= 0) {
+            return __('soon');
+        }
+        $hours = (int) round($diff / 3600);
+        if ($hours < 1) {
+            return __('in less than an hour');
+        }
+        if ($hours < 24) {
+            return sprintf($hours === 1 ? __('in %d hour') : __('in %d hours'), $hours);
+        }
+        $days = (int) round($hours / 24);
+
+        return sprintf($days === 1 ? __('in %d day') : __('in %d days'), $days);
     }
 
     private function position(string $position): string

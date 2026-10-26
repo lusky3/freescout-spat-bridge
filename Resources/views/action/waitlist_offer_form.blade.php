@@ -6,13 +6,13 @@
      data-params="{{ $paramsJson }}"
      data-conversation-id="{{ $conversationId }}">
     <div class="form-group">
-        <label>{{ __('Hours to accept') }}</label>
-        <input type="number" class="form-control spatbridge-offer-hours" min="1" max="720" step="1"
+        <label for="spatbridge-offer-hours">{{ __('Hours to accept') }}</label>
+        <input type="number" id="spatbridge-offer-hours" class="form-control spatbridge-offer-hours" min="1" max="720" step="1"
                value="{{ $defaultHours }}">
     </div>
     <div class="form-group">
-        <label>{{ __('Message to the player (optional)') }}</label>
-        <textarea class="form-control spatbridge-offer-message" rows="3" maxlength="500"></textarea>
+        <label for="spatbridge-offer-message">{{ __('Message to the player (optional)') }}</label>
+        <textarea id="spatbridge-offer-message" class="form-control spatbridge-offer-message" rows="3" maxlength="500"></textarea>
     </div>
 
     <p class="alert alert-danger spatbridge-offer-error" role="alert" hidden></p>

@@ -190,20 +190,25 @@
         var button = form.querySelector('.spatbridge-offer-preview');
         var errorBox = form.querySelector('.spatbridge-offer-error');
 
-        function showError(text) {
+        function showError(problem) {
             if (errorBox) {
-                errorBox.textContent = text;
-                errorBox.hidden = text === '';
+                errorBox.textContent = problem;
+                errorBox.hidden = problem === '';
             }
         }
 
         if (!button) {
             return;
         }
-        button.addEventListener('click', function (event) {
+
+        function submit(event) {
             event.preventDefault();
-            var count = parseInt(hours ? hours.value : '', 10);
-            if (isNaN(count) || count < 1 || count > 720) {
+            if (button.disabled) {
+                return;
+            }
+            var raw = hours ? hours.value.trim() : '';
+            var count = raw === '' ? NaN : Number(raw);
+            if (!Number.isInteger(count) || count < 1 || count > 720) {
                 showError('Enter a number of hours from 1 to 720.');
                 return;
             }
@@ -220,11 +225,20 @@
             }
             button.disabled = true;
             showError('');
-            loadPreview(root, form, params, function (text) {
+            loadPreview(root, form, params, function (failure) {
                 button.disabled = false;
-                showError(text);
+                showError(failure);
             });
-        });
+        }
+
+        button.addEventListener('click', submit);
+        if (hours) {
+            hours.addEventListener('keydown', function (event) {
+                if (event.key === 'Enter') {
+                    submit(event);
+                }
+            });
+        }
     }
 
     /**
