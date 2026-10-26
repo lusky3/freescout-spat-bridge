@@ -13,12 +13,14 @@ on:
   pull_request:
   workflow_dispatch:
     inputs:
+      # Empty defaults so a dispatch without inputs falls back to the
+      # SPAT_REF / SANDBOX_REF repo variables, then main.
       spat_ref:
-        description: SportsPress-Admin-Tools branch or tag to test against
-        default: main
+        description: SportsPress-Admin-Tools branch or tag (blank = SPAT_REF variable, else main)
+        default: ''
       sandbox_ref:
-        description: sportspress-sandbox branch or tag to test against
-        default: main
+        description: sportspress-sandbox branch or tag (blank = SANDBOX_REF variable, else main)
+        default: ''
 
 permissions:
   contents: read
