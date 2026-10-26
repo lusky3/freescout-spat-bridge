@@ -35,3 +35,13 @@ Route::group([
         'uses' => 'ActionController@query',
     ])->name('spatbridge.action.query');
 });
+
+Route::group([
+    // Signed events from WordPress: no session, auth or CSRF ('open'); the
+    // controller checks the shared-secret signature.
+    'middleware' => ['open', 'throttle:120,1'],
+    'prefix' => \Helper::getSubdirectory(),
+    'namespace' => 'Modules\\SpatBridge\\Http\\Controllers',
+], function () {
+    Route::post('/spatbridge/events', 'EventsController@receive')->name('spatbridge.events');
+});

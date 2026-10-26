@@ -4,14 +4,19 @@ namespace Modules\SpatBridge\Providers;
 
 use GuzzleHttp\Client;
 use Illuminate\Support\ServiceProvider;
+use Modules\SpatBridge\Console\PruneEventsCommand;
 use Modules\SpatBridge\Features\ETransfers\ETransfersFeature;
 use Modules\SpatBridge\Features\FeatureRegistry;
 use Modules\SpatBridge\Features\PlayerCard\PlayerCardFeature;
 use Modules\SpatBridge\Services\ActionPermissions;
 use Modules\SpatBridge\Services\ClientResult;
+use Modules\SpatBridge\Services\DatabaseEventStore;
+use Modules\SpatBridge\Services\EventStoreInterface;
 use Modules\SpatBridge\Services\MailboxScope;
 use Modules\SpatBridge\Services\SidebarBuilder;
 use Modules\SpatBridge\Services\SpatClient;
+use Modules\SpatBridge\Services\TagService;
+use Modules\SpatBridge\Services\TicketCreator;
 use Modules\SpatBridge\Services\Support\LaravelOptionStore;
 use Modules\SpatBridge\Services\Support\OptionBool;
 use Modules\SpatBridge\Services\Support\OptionStoreInterface;
@@ -40,6 +45,14 @@ class SpatBridgeServiceProvider extends ServiceProvider
         $this->app->bind(\GuzzleHttp\ClientInterface::class, function () {
             return new Client();
         });
+
+        $this->app->bind(EventStoreInterface::class, DatabaseEventStore::class);
+
+        $this->app->bind(TagService::class, function () {
+            return new TagService();
+        });
+
+        $this->commands([PruneEventsCommand::class]);
     }
 
     public function boot()
@@ -49,12 +62,14 @@ class SpatBridgeServiceProvider extends ServiceProvider
         }, \Config::get('view.paths')), [__DIR__ . '/../Resources/views']), 'spatbridge');
 
         $this->loadRoutesFrom(__DIR__ . '/../Http/routes.php');
+        $this->loadMigrationsFrom(__DIR__ . '/../Database/Migrations');
 
         $this->app->make(FeatureRegistry::class)->register(new PlayerCardFeature());
         $this->app->make(FeatureRegistry::class)->register(new ETransfersFeature());
 
         $this->registerSettingsSection();
         $this->registerSidebarPanel();
+        $this->registerEvents();
 
         // Feeds Resources/views/settings/index.blade.php so the view stays a
         // pure template.
@@ -162,6 +177,23 @@ class SpatBridgeServiceProvider extends ServiceProvider
 
             return 'spatbridge::settings.index';
         }, 20, 2);
+    }
+
+    /**
+     * Tickets the bridge opens for WordPress events never mail the customer,
+     * and the event log is pruned daily.
+     */
+    protected function registerEvents(): void
+    {
+        \Eventy::addFilter('conversation.skip_send_reply_to_customer', function ($skip, $conversation) {
+            return TicketCreator::skipSend($skip, $conversation);
+        }, 20, 2);
+
+        \Eventy::addFilter('schedule', function ($schedule) {
+            $schedule->command('spatbridge:prune-events')->daily();
+
+            return $schedule;
+        });
     }
 
     /**

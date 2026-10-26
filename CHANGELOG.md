@@ -26,6 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - e-Transfers panel: a customer's e-Transfers and on-hold orders, with
   "Match" actions (preview and confirm pop-up, order/transfer picker, extra
   tick when the amounts differ).
+- Signed event receiver (`POST /spatbridge/events`) for WordPress events
+  (e-Transfers, registrations, waitlist offers): each is logged once, adds an
+  internal note and tag to the customer's open tickets, or, when switched on
+  for that type, opens a phone ticket that never mails the customer. Old
+  events are pruned daily after 90 days.
 - Release workflow and release guard: a release needs a version bump and a
   changelog entry, and PRs that change shipped files need a changelog entry.
 

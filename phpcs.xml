@@ -2,6 +2,8 @@
 <ruleset name="SpatBridge">
     <description>PSR-12 coding standard for the SpatBridge FreeScout module.</description>
 
+    <file>Console</file>
+    <file>Database</file>
     <file>Features</file>
     <file>Http</file>
     <file>Providers</file>
@@ -22,6 +24,15 @@
 
     <rule ref="PSR1.Methods.CamelCapsMethodName">
         <exclude-pattern>*/Tests/*</exclude-pattern>
+    </rule>
+
+    <!--
+        Laravel's migrator instantiates a migration by the class name it
+        derives from the file name, in the global namespace, so migrations
+        can't have a namespace.
+    -->
+    <rule ref="PSR1.Classes.ClassDeclaration.MissingNamespace">
+        <exclude-pattern>*/Database/Migrations/*</exclude-pattern>
     </rule>
 
     <rule ref="PSR12"/>
