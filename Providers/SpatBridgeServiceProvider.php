@@ -61,7 +61,10 @@ class SpatBridgeServiceProvider extends ServiceProvider
                     'key' => $feature->key(),
                     'label' => $feature->label(),
                     'providerKeys' => $feature->providerKeys(),
-                    'enabled' => OptionBool::from($options->get('spatbridge.features.' . $feature->key() . '.enabled', true), true),
+                    'enabled' => OptionBool::from(
+                        $options->get('spatbridge.features.' . $feature->key() . '.enabled', true),
+                        true
+                    ),
                 ];
             }
 
@@ -86,7 +89,10 @@ class SpatBridgeServiceProvider extends ServiceProvider
 
             $view->with('wpBaseUrl', (string) $options->get('spatbridge.wp_base_url', ''));
             $view->with('hasSecret', (string) $options->get('spatbridge.shared_secret', '') !== '');
-            $view->with('layoutDefault', $options->get('spatbridge.layout_default', 'stacked') === 'tabbed' ? 'tabbed' : 'stacked');
+            $view->with(
+                'layoutDefault',
+                $options->get('spatbridge.layout_default', 'stacked') === 'tabbed' ? 'tabbed' : 'stacked'
+            );
             $view->with('allowSwitch', OptionBool::from($options->get('spatbridge.allow_agent_switch', true), true));
             $view->with('mailboxes', $mailboxes);
             $view->with('selectedMailboxes', is_array($selected) ? array_map('intval', $selected) : []);
@@ -172,7 +178,10 @@ class SpatBridgeServiceProvider extends ServiceProvider
                 $viewModel['layoutDefault'] = $options->get('spatbridge.layout_default', 'stacked') === 'tabbed'
                     ? 'tabbed'
                     : 'stacked';
-                $viewModel['allowSwitch'] = OptionBool::from($options->get('spatbridge.allow_agent_switch', true), true);
+                $viewModel['allowSwitch'] = OptionBool::from(
+                    $options->get('spatbridge.allow_agent_switch', true),
+                    true
+                );
 
                 echo view('spatbridge::sidebar', $viewModel)->render();
             } catch (\Throwable $e) {

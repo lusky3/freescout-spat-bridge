@@ -4,6 +4,7 @@
 
     <file>Features</file>
     <file>Http</file>
+    <file>Providers</file>
     <file>Services</file>
     <file>Tests</file>
 
