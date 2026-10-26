@@ -4,6 +4,7 @@ namespace Modules\SpatBridge\Services;
 
 use Modules\SpatBridge\Services\Support\OptionBool;
 use Modules\SpatBridge\Services\Support\OptionStoreInterface;
+use Modules\SpatBridge\Services\Support\Timezones;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 
@@ -23,19 +24,27 @@ class EventSettings
     private $store;
     /** @var LoggerInterface */
     private $logger;
+    /** @var callable(): \DateTimeZone */
+    private $timezone;
 
+    /**
+     * @param callable|null $timezone Returns the zone to show times in; the
+     *        viewing agent's FreeScout time zone by default.
+     */
     public function __construct(
         OptionStoreInterface $options,
         EventCatalog $catalog,
         TagService $tags,
         EventStoreInterface $store,
-        ?LoggerInterface $logger = null
+        ?LoggerInterface $logger = null,
+        ?callable $timezone = null
     ) {
         $this->options = $options;
         $this->catalog = $catalog;
         $this->tags = $tags;
         $this->store = $store;
         $this->logger = $logger ?? new NullLogger();
+        $this->timezone = $timezone ?? [Timezones::class, 'agent'];
     }
 
     /**
@@ -122,10 +131,24 @@ class EventSettings
         $row = $rows[0];
 
         return [
-            'time' => $row['created_at'],
+            'time' => $this->agentTime($row['created_at']),
             'type' => $this->catalog->label($row['type']),
             'email' => $row['email'],
             'outcome' => $this->catalog->outcomeLabel($row['outcome']),
         ];
+    }
+
+    /**
+     * Rows are stamped in the app zone; show the agent's zone, labelled.
+     */
+    private function agentTime(string $stored): string
+    {
+        try {
+            return (new \DateTimeImmutable($stored, Timezones::app()))
+                ->setTimezone(($this->timezone)())
+                ->format('Y-m-d H:i:s T');
+        } catch (\Exception $e) {
+            return $stored;
+        }
     }
 }

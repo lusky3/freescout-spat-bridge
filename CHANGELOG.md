@@ -108,3 +108,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Player card dates (next game, registration history) are shown in the viewing
   agent's FreeScout time zone, like the e-Transfers and Waitlist panels,
   instead of the zone WordPress sent.
+- The settings page's "Last event received" is shown in the viewing agent's
+  time zone with its abbreviation (e.g. "2026-10-26 09:40:24 EDT") instead of
+  unlabelled server time.

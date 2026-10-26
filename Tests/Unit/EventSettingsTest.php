@@ -27,13 +27,13 @@ class EventSettingsTest extends TestCase
         $this->logger = new TestLogger();
     }
 
-    private function settings(bool $tagsActive = true): EventSettings
+    private function settings(bool $tagsActive = true, ?callable $timezone = null): EventSettings
     {
         $tags = new TagService(function () use ($tagsActive) {
             return $tagsActive;
         }, FakeTag::class);
 
-        return new EventSettings($this->options, new EventCatalog(), $tags, $this->store, $this->logger);
+        return new EventSettings($this->options, new EventCatalog(), $tags, $this->store, $this->logger, $timezone);
     }
 
     private function type(array $model, string $type): array
@@ -117,6 +117,21 @@ class EventSettingsTest extends TestCase
         $this->assertFalse($model['tableMissing']);
     }
 
+    public function test_last_event_time_is_shown_in_the_agents_zone_with_its_abbreviation(): void
+    {
+        // Stored in the app zone (UTC in tests): 14:02 UTC is 10:02 AM EDT.
+        $this->store->log[1] = [
+            'type' => 'etransfer.matched', 'email' => 'a@example.com', 'outcome' => 'noted',
+            'conversation_ids' => '', 'detail' => '', 'created_at' => '2026-10-25 14:02:00',
+        ];
+
+        $last = $this->settings(true, function () {
+            return new \DateTimeZone('America/Toronto');
+        })->build()['lastEvent'];
+
+        $this->assertSame('2026-10-25 10:02:00 EDT', $last['time']);
+    }
+
     public function test_last_event_is_null_until_one_arrives_then_the_newest(): void
     {
         $this->assertNull($this->settings()->build()['lastEvent']);
@@ -133,7 +148,7 @@ class EventSettingsTest extends TestCase
         $last = $this->settings()->build()['lastEvent'];
 
         $this->assertSame([
-            'time' => '2026-10-25 14:02:00',
+            'time' => '2026-10-25 14:02:00 UTC',
             'type' => 'e-Transfer unmatched',
             'email' => 'b@example.com',
             'outcome' => 'Ticket created, tag skipped',
