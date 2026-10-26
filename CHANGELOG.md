@@ -115,3 +115,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shown with a disabled "Use this order" button instead of being refused only
   at the preview, and the order-number and search boxes have an accessible
   name.
+- The tabbed sidebar layout keeps its tab labels on one line ("Waitlist" no
+  longer wraps at the default sidebar width).

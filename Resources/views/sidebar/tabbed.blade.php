@@ -16,10 +16,10 @@
                 @if ($summary !== null)
                     <div><small class="text-help">{{ $summary }}</small></div>
                 @endif
-                <ul class="nav nav-pills spatbridge-tabs">
+                <ul class="nav nav-pills spatbridge-tabs" style="display: flex;">
                     @foreach ($panels as $panel)
-                        <li @if ($panel->key() === $activeTab) class="active" @endif>
-                            <a href="#" class="spatbridge-tab" data-tab="{{ $panel->key() }}">{{ $panel->label() }}</a>
+                        <li @if ($panel->key() === $activeTab) class="active" @endif style="float: none;">
+                            <a href="#" class="spatbridge-tab" style="white-space: nowrap; padding: 8px 10px;" data-tab="{{ $panel->key() }}">{{ $panel->label() }}</a>
                         </li>
                     @endforeach
                 </ul>
