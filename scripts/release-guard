@@ -1,0 +1,168 @@
+#!/usr/bin/env php
+<?php
+
+/**
+ * Release guard CLI.
+ *
+ *   scripts/release-guard pr <base-sha>    changed shipped files need a CHANGELOG entry
+ *   scripts/release-guard tag <vX.Y.Z>     version bump + changelog entry + shipped change
+ *
+ * Run from the repository root. Needs only git and PHP: no Composer autoloader.
+ */
+
+require __DIR__ . '/ReleaseGuard.php';
+
+use Scripts\ReleaseGuard;
+
+/**
+ * @return string[] Output lines; exits 2 when git fails.
+ */
+function git(string ...$args): array
+{
+    $command = 'git -c core.quotepath=off';
+    foreach ($args as $arg) {
+        $command .= ' ' . escapeshellarg($arg);
+    }
+    exec($command . ' 2>&1', $output, $status);
+    if ($status !== 0) {
+        fwrite(STDERR, "git failed ($status): $command\n" . implode("\n", $output) . "\n");
+        exit(2);
+    }
+
+    return $output;
+}
+
+/**
+ * A file's contents at a revision, or '' when the revision has no such file.
+ */
+function fileAtRevision(string $revision, string $path): string
+{
+    $spec = escapeshellarg($revision . ':' . $path);
+    exec('git cat-file -e ' . $spec . ' 2>/dev/null', $ignored, $status);
+    if ($status !== 0) {
+        return '';
+    }
+
+    return implode("\n", git('show', $revision . ':' . $path));
+}
+
+/**
+ * Changed paths that git check-attr does not mark export-ignore.
+ *
+ * @param string[] $paths
+ * @return string[]
+ */
+function shippedOnly(array $paths): array
+{
+    $paths = array_values(array_filter($paths, 'strlen'));
+    if (count($paths) === 0) {
+        return [];
+    }
+
+    // git check-attr does not inherit a directory's attributes ("/Tests
+    // export-ignore" is not reported for Tests/Unit/X.php), but git archive
+    // does, so check every ancestor directory as well.
+    $candidates = [];
+    foreach ($paths as $path) {
+        for ($p = $path; $p !== '.' && $p !== ''; $p = dirname($p)) {
+            $candidates[$p] = true;
+        }
+    }
+
+    // "path: export-ignore: set"
+    $suffix = ': export-ignore: set';
+    $ignored = [];
+    foreach (git('check-attr', 'export-ignore', '--', ...array_keys($candidates)) as $line) {
+        if (substr($line, -strlen($suffix)) === $suffix) {
+            $ignored[substr($line, 0, -strlen($suffix))] = true;
+        }
+    }
+
+    return array_values(array_filter($paths, function (string $path) use ($ignored): bool {
+        for ($p = $path; $p !== '.' && $p !== ''; $p = dirname($p)) {
+            if (isset($ignored[$p])) {
+                return false;
+            }
+        }
+
+        return true;
+    }));
+}
+
+function failWith(array $errors): void
+{
+    foreach ($errors as $error) {
+        echo '::error::' . $error . "\n";
+    }
+    if (count($errors) > 0) {
+        exit(1);
+    }
+}
+
+$mode = $argv[1] ?? '';
+$arg = $argv[2] ?? '';
+
+if ($mode === 'pr' && $arg !== '') {
+    $shipped = shippedOnly(git('diff', '--name-only', '--no-renames', $arg . '...HEAD'));
+    if (count($shipped) === 0) {
+        echo "No shipped files changed; no changelog entry needed.\n";
+        exit(0);
+    }
+
+    $base = fileAtRevision($arg, 'CHANGELOG.md');
+    $head = (string) file_get_contents('CHANGELOG.md');
+    $module = json_decode((string) file_get_contents('module.json'), true);
+    $moduleVersion = is_array($module) && isset($module['version']) ? (string) $module['version'] : '';
+    if (ReleaseGuard::releaseSectionAdded($base, $head, $moduleVersion)) {
+        echo "Release PR: CHANGELOG.md gained a ## [$moduleVersion] section matching module.json.\n";
+        exit(0);
+    }
+    if (!ReleaseGuard::unreleasedGained($base, $head)) {
+        failWith([
+            'This PR changes shipped files (' . implode(', ', array_slice($shipped, 0, 5))
+            . (count($shipped) > 5 ? ', ...' : '')
+            . ') but adds no entry under "## [Unreleased]" in CHANGELOG.md.',
+        ]);
+    }
+    echo "Changelog entry found.\n";
+    exit(0);
+}
+
+if ($mode === 'tag' && $arg !== '') {
+    $tagVersion = ltrim($arg, 'v');
+
+    $previous = null;
+    foreach (git('tag', '-l', 'v*') as $tag) {
+        $version = substr($tag, 1);
+        if ($tag === $arg || !ReleaseGuard::isValidVersion($version)) {
+            continue;
+        }
+        if ($previous === null || version_compare($version, substr($previous, 1), '>')) {
+            $previous = $tag;
+        }
+    }
+
+    $module = json_decode((string) file_get_contents('module.json'), true);
+    $moduleVersion = is_array($module) && isset($module['version']) ? (string) $module['version'] : '';
+
+    $shipped = [];
+    if ($previous !== null) {
+        // Fall back to HEAD when the tag has not been created yet (local rehearsal).
+        exec('git rev-parse -q --verify ' . escapeshellarg('refs/tags/' . $arg . '^{commit}') . ' 2>&1', $out, $status);
+        $target = $status === 0 ? $arg : 'HEAD';
+        $shipped = shippedOnly(git('diff', '--name-only', '--no-renames', $previous, $target));
+    }
+
+    failWith(ReleaseGuard::tagErrors(
+        $tagVersion,
+        $moduleVersion,
+        $previous,
+        (string) file_get_contents('CHANGELOG.md'),
+        $shipped
+    ));
+    echo "Release $arg passes the guard (previous: " . ($previous ?? 'none') . ").\n";
+    exit(0);
+}
+
+fwrite(STDERR, "Usage: release-guard pr <base-sha> | release-guard tag <vX.Y.Z>\n");
+exit(2);

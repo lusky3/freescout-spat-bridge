@@ -1,0 +1,98 @@
+<?php
+
+namespace Modules\SpatBridge\Http\Controllers;
+
+use App\Http\Controllers\Controller;
+use Modules\SpatBridge\Services\EventCatalog;
+use Modules\SpatBridge\Services\EventStoreInterface;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
+
+/**
+ * Admin-only page listing the latest events received from WordPress.
+ */
+class EventLogController extends Controller
+{
+    public const LIMIT = 100;
+
+    /** @var EventStoreInterface */
+    private $store;
+    /** @var EventCatalog */
+    private $catalog;
+    /** @var LoggerInterface */
+    private $logger;
+
+    public function __construct(
+        EventStoreInterface $store,
+        ?EventCatalog $catalog = null,
+        ?LoggerInterface $logger = null
+    ) {
+        $this->store = $store;
+        $this->catalog = $catalog ?? new EventCatalog();
+        $this->logger = $logger ?? new NullLogger();
+    }
+
+    public function index()
+    {
+        return view('spatbridge::events.log', $this->data());
+    }
+
+    /**
+     * The page's data. A failing query (typically a missing table on an
+     * install that hasn't migrated) becomes a notice, not a 500.
+     *
+     * @return array{events: array, tableMissing: bool}
+     */
+    public function data(): array
+    {
+        try {
+            return ['events' => $this->rows(), 'tableMissing' => false];
+        } catch (\Throwable $e) {
+            // Logged: the notice says "run the migration", but this may be
+            // a database outage instead.
+            $this->logger->warning('[SpatBridge] reading the event log failed: ' . $e->getMessage(), [
+                'page' => 'event log',
+                'exception_class' => get_class($e),
+            ]);
+
+            return ['events' => [], 'tableMissing' => true];
+        }
+    }
+
+    /**
+     * @return array<int, array{
+     *     time: string, type: string, email: string, outcome: string, conversationIds: int[], detail: string
+     * }>
+     */
+    public function rows(): array
+    {
+        $rows = [];
+        foreach ($this->store->latest(self::LIMIT) as $event) {
+            $rows[] = [
+                'time' => $event['created_at'],
+                'type' => $this->catalog->label($event['type']),
+                'email' => $event['email'],
+                'outcome' => $this->catalog->outcomeLabel($event['outcome']),
+                'conversationIds' => self::ids($event['conversation_ids']),
+                'detail' => $event['detail'],
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @return int[]
+     */
+    private static function ids(string $list): array
+    {
+        $ids = [];
+        foreach (explode(',', $list) as $part) {
+            if (ctype_digit($part) && (int) $part > 0) {
+                $ids[] = (int) $part;
+            }
+        }
+
+        return $ids;
+    }
+}

@@ -1,5 +1,6 @@
 /vendor
 /docker/freescout
+/e2e/freescout-core
 .phpunit.cache
 .phpunit.result.cache
 *.log

@@ -1,0 +1,49 @@
+# ⚠️  LOCAL DEVELOPMENT / TESTING ONLY — DO NOT USE FOR STAGING OR PRODUCTION ⚠️
+#
+# Adapted from freescout-module-manager/docker/docker-compose.yml. See that
+# file for the full rationale (weak throwaway credentials, the chmod
+# workaround, the circular bind-mount guard) — unchanged here except for
+# this module's own name and mount path, and a chmod that leaves the
+# bind-mounted module alone (see the app service).
+
+services:
+  db:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: freescout_root
+      MYSQL_DATABASE: freescout
+      MYSQL_USER: freescout
+      MYSQL_PASSWORD: freescout
+    volumes:
+      - db_data:/var/lib/mysql
+    ports:
+      - "127.0.0.1:33063:3306"
+
+  app:
+    build:
+      context: ./php
+    volumes:
+      - ./freescout:/var/www/html
+      - ../:/var/www/html/Modules/SpatBridge
+      - module_repo_docker_dir_excluded:/var/www/html/Modules/SpatBridge/docker
+    working_dir: /var/www/html
+    # Modules/SpatBridge is the bind-mounted host repo: chmodding it would flip
+    # the modes of every tracked file (and .git) on the host, so only
+    # FreeScout's own writable paths are opened up, as e2e/ does.
+    command: ["sh", "-c", "mkdir -p public/css/builds public/js/builds; chmod -R 777 storage bootstrap/cache public/css/builds public/js/builds 2>/dev/null; php-fpm"]
+    depends_on:
+      - db
+
+  web:
+    image: nginx:1.25-alpine
+    volumes:
+      - ./freescout:/var/www/html
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "127.0.0.1:8083:80"
+    depends_on:
+      - app
+
+volumes:
+  db_data:
+  module_repo_docker_dir_excluded:

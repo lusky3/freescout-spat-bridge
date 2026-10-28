@@ -1,0 +1,233 @@
+name: Release
+
+# Triggered by the tag, not by a published release, and deliberately so.
+#
+# On `release: published` GitHub has already flipped the release to "Latest"
+# before this workflow runs, so a failure here -- most likely at the version
+# guard, the one thing this workflow exists to catch -- would leave the
+# Latest release with no assets at all. FreeScout's own module-update check
+# polls releases/latest/download/version.json, so that turns a caught
+# mistake into a broken update path for everyone who has this module
+# installed.
+#
+# Building from the tag and only un-drafting at the very end means a release
+# becomes Latest if and only if a verified artifact is already attached to
+# it.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build, verify and publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+
+    env:
+      TAG_NAME: ${{ github.ref_name }}
+
+    steps:
+      # This job produces the artifact that installs itself onto other
+      # people's helpdesks, so it is the one whose egress most deserves an
+      # audit trail.
+      - name: Harden the runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
+
+      # Pinned to full commit SHAs: a mutable tag on the workflow that signs
+      # and publishes releases is the highest-value thing an attacker could
+      # repoint.
+      - name: Checkout the tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # actions/checkout's default refspec only fetches the pushed ref:
+      # origin/main is not guaranteed present for the ancestry check below,
+      # and the version-bump check further down needs every prior release
+      # tag, not just this one.
+      - name: Fetch main and all tags
+        run: |
+          git fetch origin +refs/heads/main:refs/remotes/origin/main
+          git fetch origin --tags --force
+
+      # A tag can be pushed from any branch. Requiring it to already be on
+      # main means a release can only ever ship a commit that went through
+      # the normal PR gates.
+      - name: Verify the tagged commit is on main
+        run: |
+          set -euo pipefail
+          commit=$(git rev-parse "$TAG_NAME^{commit}")
+          if ! git merge-base --is-ancestor "$commit" origin/main; then
+            echo "::error::$TAG_NAME (commit $commit) is not reachable from main."
+            echo "Merge the branch that produced this commit into main, then re-tag from there."
+            exit 1
+          fi
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: '8.2'
+          extensions: zip
+          coverage: none
+          tools: composer:v2
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist
+
+      # A tag can be cut from any commit, including one that never had green
+      # CI. Re-running the suite here makes the checks a release gate rather
+      # than a branch formality.
+      - name: Run tests
+        run: vendor/bin/phpunit --testsuite Unit
+
+      - name: Check style
+        run: vendor/bin/phpcs
+
+      # The release guard enforces the rule that a release cannot ship without
+      # a version bump and a changelog entry: module.json's version equals the
+      # tag (or the zip's bundled module.json would report the wrong version
+      # to the next update check), it is greater than the previous tag's, the
+      # changelog has a non-empty section for it, and some shipped file
+      # changed since the previous tag. Needs the full tag history fetched
+      # above.
+      - name: Verify the version bump and changelog entry
+        run: php scripts/release-guard tag "$TAG_NAME"
+
+      # --prefix makes the archive's top-level folder exactly "SpatBridge/",
+      # which must match the namespace segment in module.json's provider
+      # entry: FreeScout maps Modules\ => Modules/, so any other folder name
+      # is a class-not-found on activation. git archive honours
+      # .gitattributes export-ignore, so the development harness is left out.
+      - name: Build the archive
+        run: git archive --format=zip --prefix=SpatBridge/ "$TAG_NAME" -o freescout-spat-bridge.zip
+
+      # export-ignore is exactly the kind of edit that can silently gut an
+      # artifact, so the archive is inspected before anyone can install it.
+      # Every tracked file under the runtime folders must be in it (a pattern,
+      # so new features, views, scripts and migrations are covered without
+      # editing this step), plus a few named files, so deleting one from the
+      # repo by accident fails here too.
+      - name: Verify the archive
+        run: |
+          set -euo pipefail
+          top=$(unzip -Z1 freescout-spat-bridge.zip | cut -d/ -f1 | sort -u)
+          if [ "$top" != "SpatBridge" ]; then
+            echo "::error::archive top-level folder is '$top', expected exactly 'SpatBridge'"
+            exit 1
+          fi
+          unzip -Z1 freescout-spat-bridge.zip | grep -v '/$' | sort > archive-files.txt
+          git ls-tree -r --name-only "$TAG_NAME" -- \
+            module.json LICENSE README.md \
+            Console Database Features Http Providers Public Resources Services \
+            | sed 's|^|SpatBridge/|' | sort > runtime-files.txt
+          for dir in Console Database/Migrations Features Http/Controllers Providers Public/js Resources/views Services; do
+            if ! grep -q "^SpatBridge/$dir/" runtime-files.txt; then
+              echo "::error::no tracked files under $dir"
+              exit 1
+            fi
+          done
+          missing=$(comm -23 runtime-files.txt archive-files.txt)
+          if [ -n "$missing" ]; then
+            echo "::error::archive is missing runtime files (check .gitattributes export-ignore):"
+            echo "$missing"
+            exit 1
+          fi
+          for required in \
+            SpatBridge/module.json \
+            SpatBridge/Providers/SpatBridgeServiceProvider.php \
+            SpatBridge/Services/SpatClient.php \
+            SpatBridge/Services/SidebarBuilder.php \
+            SpatBridge/Services/EventRouter.php \
+            SpatBridge/Features/PlayerCard/PlayerCardFeature.php \
+            SpatBridge/Features/ETransfers/ETransfersFeature.php \
+            SpatBridge/Features/Waitlist/WaitlistFeature.php \
+            SpatBridge/Public/js/sidebar.js \
+            SpatBridge/Public/js/actions.js \
+            SpatBridge/Http/routes.php \
+            SpatBridge/Http/Controllers/SpatBridgeSettingsController.php \
+            SpatBridge/Http/Controllers/ActionController.php \
+            SpatBridge/Http/Controllers/EventsController.php \
+            SpatBridge/Http/Controllers/EventLogController.php \
+            SpatBridge/Console/PruneEventsCommand.php \
+            SpatBridge/Database/Migrations/2026_10_26_000000_create_spatbridge_events_table.php \
+            SpatBridge/Resources/views/sidebar.blade.php \
+            SpatBridge/Resources/views/action/preview.blade.php \
+            SpatBridge/Resources/views/events/log.blade.php \
+            SpatBridge/LICENSE \
+            SpatBridge/README.md
+          do
+            if ! grep -qx "$required" archive-files.txt; then
+              echo "::error::archive is missing $required"
+              exit 1
+            fi
+          done
+          unzip -p freescout-spat-bridge.zip SpatBridge/module.json \
+            | jq -e --arg v "${TAG_NAME#v}" '.version == $v' > /dev/null
+
+      - name: Write version.json
+        run: |
+          jq -n --arg version "${TAG_NAME#v}" '{version: $version}' > version.json
+
+      - name: Extract the changelog entry for this version
+        run: |
+          set -euo pipefail
+          tag_version="${TAG_NAME#v}"
+          # The second exit condition (a bare link-reference line, e.g.
+          # "[1.0.0]: https://...") matters specifically for a version's
+          # *first* release: with no earlier version section following it in
+          # the file, the "next ## [" exit never fires, and without this the
+          # extraction would run to EOF and swallow the link-reference
+          # footer into the release notes. Caught by rehearsing this locally
+          # against this repo's own CHANGELOG.md before ever pushing a tag.
+          awk -v ver="$tag_version" '
+            $0 ~ "^## \\[" ver "\\]" { flag = 1; next }
+            flag && /^## \[/ { exit }
+            flag && /^\[/ { exit }
+            flag { print }
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "::error::no CHANGELOG.md entry found for $tag_version"
+            exit 1
+          fi
+
+      - name: Create the release as a draft
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG_NAME" > /dev/null 2>&1; then
+            gh release edit "$TAG_NAME" --draft=true --notes-file release-notes.md
+          else
+            gh release create "$TAG_NAME" --draft --title "$TAG_NAME" --notes-file release-notes.md
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      # Uploaded in two ordered steps, never one command: `gh release upload`
+      # uploads its arguments concurrently, so a single call could land
+      # version.json while the zip fails. version.json is the trigger every
+      # install polls, so it must be the last thing to appear.
+      - name: Upload the module archive
+        run: gh release upload "$TAG_NAME" freescout-spat-bridge.zip --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Upload version.json
+        run: gh release upload "$TAG_NAME" version.json --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Publish the release
+        run: gh release edit "$TAG_NAME" --draft=false --latest
+        env:
+          GH_TOKEN: ${{ github.token }}

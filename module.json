@@ -1,0 +1,15 @@
+{
+    "name": "ARL League",
+    "alias": "spatbridge",
+    "description": "League info from SportsPress Admin Tools on the ticket: player, e-Transfers, waitlist.",
+    "version": "0.1.0",
+    "detailsUrl": "https://github.com/lusky3/freescout-spat-bridge",
+    "license": "MIT",
+    "author": "Cody (lusky3)",
+    "authorUrl": "https://github.com/lusky3/freescout-spat-bridge",
+    "latestVersionUrl": "https://github.com/lusky3/freescout-spat-bridge/releases/latest/download/version.json",
+    "latestVersionZipUrl": "https://github.com/lusky3/freescout-spat-bridge/releases/latest/download/freescout-spat-bridge.zip",
+    "providers": [
+        "Modules\\SpatBridge\\Providers\\SpatBridgeServiceProvider"
+    ]
+}
