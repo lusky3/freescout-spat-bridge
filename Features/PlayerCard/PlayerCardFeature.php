@@ -8,6 +8,7 @@ use Modules\SpatBridge\Features\GuardsActionParams;
 use Modules\SpatBridge\Features\Panel;
 use Modules\SpatBridge\Features\PanelRow;
 use Modules\SpatBridge\Features\RowAction;
+use Modules\SpatBridge\Services\Support\RegistrationOutcome;
 use Modules\SpatBridge\Services\Support\Timezones;
 
 /**
@@ -283,7 +284,7 @@ final class PlayerCardFeature implements Feature, GuardsActionParams, AddsNoteFo
         $lines = [];
         $last = $this->str($item, 'last_action');
         if ($last !== '') {
-            $lines[] = __('Last outcome:') . ' ' . str_replace('_', ' ', $last);
+            $lines[] = __('Last outcome:') . ' ' . RegistrationOutcome::label($last);
         }
 
         return new PanelRow(
@@ -319,7 +320,7 @@ final class PlayerCardFeature implements Feature, GuardsActionParams, AddsNoteFo
                 continue;
             }
             $line = $this->orderLabel($entry);
-            $action = str_replace('_', ' ', $this->str($entry, 'action'));
+            $action = RegistrationOutcome::label($this->str($entry, 'action'));
             if ($action !== '') {
                 $line .= ' → ' . $action;
             }

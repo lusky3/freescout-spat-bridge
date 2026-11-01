@@ -2,6 +2,7 @@
 
 namespace Modules\SpatBridge\Services;
 
+use Modules\SpatBridge\Services\Support\RegistrationOutcome;
 use Modules\SpatBridge\Services\Support\Timezones;
 
 /**
@@ -208,7 +209,7 @@ final class EventCatalog
             case 'registration.incomplete':
                 return strtr(__('Registration for order #:order did not complete: :outcome.'), [
                     ':order' => $order,
-                    ':outcome' => str_replace('_', ' ', $this->text($data, 'outcome')),
+                    ':outcome' => RegistrationOutcome::label($this->text($data, 'outcome')),
                 ]);
             case 'registration.reversed':
                 return strtr(__('Registration for order #:order was reversed.'), [':order' => $order]);
