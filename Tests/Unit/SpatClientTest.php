@@ -248,4 +248,65 @@ class SpatClientTest extends TestCase
             $this->assertSame([], $this->logger->records, $body);
         }
     }
+
+    /**
+     * FreeScout's default log level is error, so failures an operator must
+     * fix (or an outage they must be able to explain later) are logged at
+     * error. Answers WordPress gives on purpose stay at warning.
+     *
+     * @dataProvider logLevelProvider
+     * @param mixed $answer A response or an exception for the mock handler.
+     */
+    public function test_failures_are_logged_at_a_level_an_operator_sees($answer, string $level): void
+    {
+        $this->client([$answer])->customer(['a@example.com']);
+
+        $this->assertCount(1, $this->logger->records);
+        $this->assertSame($level, $this->logger->records[0][0]);
+        $this->assertStringContainsString('/wp-json/spat/v1/freescout/customer', $this->logger->records[0][1]);
+    }
+
+    public function logLevelProvider(): array
+    {
+        $request = new Request('POST', self::BASE);
+
+        return [
+            'bad signature' => [$this->errorResponse(403, 'spat_freescout_invalid_signature'), 'error'],
+            'clock skew' => [$this->errorResponse(403, 'spat_freescout_request_expired'), 'error'],
+            'not configured in WordPress' => [$this->errorResponse(503, 'spat_freescout_not_configured'), 'error'],
+            'SPAT without the routes' => [$this->errorResponse(404, 'rest_no_route'), 'error'],
+            'request refused' => [$this->errorResponse(400, 'spat_freescout_bad_request'), 'error'],
+            'server error' => [new Response(500, [], 'boom'), 'error'],
+            'redirect' => [new Response(301, ['Location' => 'https://elsewhere.example/']), 'error'],
+            'non-JSON 200' => [new Response(200, [], '<html>'), 'error'],
+            'unreachable' => [new ConnectException('Connection refused', $request), 'error'],
+            'timeout' => [new ConnectException('cURL error 28: Operation timed out', $request), 'error'],
+            'rate limited' => [$this->errorResponse(429, 'spat_freescout_rate_limited'), 'warning'],
+        ];
+    }
+
+    public function test_a_success_logs_nothing(): void
+    {
+        $this->client([new Response(200, [], '{}')])->customer(['a@example.com']);
+
+        $this->assertSame([], $this->logger->records);
+    }
+
+    public function test_the_modules_own_missing_settings_log_nothing(): void
+    {
+        // Shown on the settings page; logging it on every page view adds nothing.
+        $this->client([], '')->customer(['a@example.com']);
+
+        $this->assertSame([], $this->logger->records);
+    }
+
+    public function test_the_logged_line_never_carries_the_secret_or_the_addresses(): void
+    {
+        $this->client([$this->errorResponse(403, 'spat_freescout_invalid_signature')])
+            ->customer(['private@example.com']);
+
+        $this->assertStringNotContainsString(self::SECRET, $this->logger->records[0][1]);
+        $this->assertStringNotContainsString('private@example.com', $this->logger->records[0][1]);
+        $this->assertStringContainsString('bad_signature', $this->logger->records[0][1]);
+    }
 }
