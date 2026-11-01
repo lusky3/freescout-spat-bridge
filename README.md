@@ -64,7 +64,9 @@ the sidebar then shows nothing.
    The top-level folder must be exactly `SpatBridge`, to match the module's
    PHP namespace.
 
-2. Extract it and copy it to `/data/Modules/SpatBridge`:
+2. Extract it into an empty directory (an old `SpatBridge` folder left from an
+   earlier extraction would be merged into the new one) and copy it to
+   `/data/Modules/SpatBridge`:
 
    ```sh
    unzip -q freescout-spat-bridge.zip
