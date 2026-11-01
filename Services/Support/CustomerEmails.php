@@ -26,7 +26,8 @@ final class CustomerEmails
      * @param mixed $conversation FreeScout's Conversation (customer_email).
      * @return string[] Trimmed, lower-cased, de-duplicated and plausible
      *         addresses: the main email, then the conversation's customer
-     *         address, then the record's other emails; at most MAX.
+     *         address, then the record's other emails in sorted order;
+     *         at most MAX.
      */
     public static function of($customer, $conversation): array
     {
@@ -38,9 +39,15 @@ final class CustomerEmails
             $candidates[] = $conversation->customer_email;
         }
         if (is_object($customer) && method_exists($customer, 'getEmailsAsArray')) {
+            // The rows come in no defined order. Sorted, the list (and so
+            // its cache key and which addresses fit under MAX) is the same
+            // on every page view.
+            $others = [];
             foreach ((array) $customer->getEmailsAsArray() as $other) {
-                $candidates[] = $other;
+                $others[] = is_scalar($other) ? strtolower(trim((string) $other)) : '';
             }
+            sort($others, SORT_STRING);
+            $candidates = array_merge($candidates, $others);
         }
 
         $emails = [];

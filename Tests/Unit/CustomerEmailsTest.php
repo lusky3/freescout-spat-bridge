@@ -70,6 +70,34 @@ class CustomerEmailsTest extends TestCase
         $this->assertSame(5, CustomerEmails::MAX);
     }
 
+    public function test_the_other_emails_are_sorted_so_the_list_never_depends_on_row_order(): void
+    {
+        $conversation = (object) ['customer_email' => 'thread@example.com'];
+        $first = new FakeCustomer(
+            'main@example.com',
+            ['Zed@example.com', 'main@example.com', 'alpha@example.com', 'Beta@example.com']
+        );
+        $second = new FakeCustomer('main@example.com', ['beta@example.com', 'ALPHA@example.com', 'zed@example.com']);
+
+        $expected = [
+            'main@example.com', 'thread@example.com', 'alpha@example.com', 'beta@example.com', 'zed@example.com',
+        ];
+        $this->assertSame($expected, CustomerEmails::of($first, $conversation));
+        $this->assertSame($expected, CustomerEmails::of($second, $conversation));
+    }
+
+    public function test_the_five_kept_do_not_depend_on_row_order(): void
+    {
+        $others = ['g@x.example', 'c@x.example', 'f@x.example', 'a@x.example', 'e@x.example', 'b@x.example'];
+        $conversation = (object) ['customer_email' => 'thread@example.com'];
+
+        $expected = ['main@example.com', 'thread@example.com', 'a@x.example', 'b@x.example', 'c@x.example'];
+        foreach ([$others, array_reverse($others)] as $rows) {
+            $customer = new FakeCustomer('main@example.com', $rows);
+            $this->assertSame($expected, CustomerEmails::of($customer, $conversation));
+        }
+    }
+
     public function test_drops_entries_that_are_not_plausible_addresses(): void
     {
         $customer = new FakeCustomer('not an address', ['main@example.com', 'two@@example.com', 'x@', ['a@b.c']]);
