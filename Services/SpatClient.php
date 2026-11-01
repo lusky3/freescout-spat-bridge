@@ -17,7 +17,8 @@ use Psr\Log\LogLevel;
  * outdated SPAT would otherwise leave nothing in the log to explain why
  * the sidebar said "League info unavailable". Only answers WordPress gives
  * on purpose (rate limiting, and an action it refused with a reason) stay
- * at warning.
+ * at warning. The module's own missing URL or secret is not logged: the
+ * settings page shows it, and every page view would repeat it.
  */
 class SpatClient
 {

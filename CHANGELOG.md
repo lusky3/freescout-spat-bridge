@@ -21,10 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Waitlist rows name the registrant, and the address when it isn't the
   primary one, when a customer's entries belong to more than one person or
   address. A single registrant under the primary address looks as before.
-- WordPress failures (bad signature, clock skew, not configured, outdated
-  SPAT, refused requests, outages and timeouts) are logged at `error`, which
-  FreeScout's default log level keeps. Rate limiting and actions WordPress
-  refused with a reason stay at `warning`.
+- WordPress failures (bad signature, clock skew, not configured in
+  WordPress, outdated SPAT, refused requests, outages and timeouts) are
+  logged at `error`, which FreeScout's default log level keeps. Rate
+  limiting and actions WordPress refused with a reason stay at `warning`.
+  The module's own missing URL or secret is still not logged; the settings
+  page shows it.
 - README: Update Now no longer claims to do the whole manual upgrade (it
   installs over the existing folder and keeps files a release dropped), the
   boot-wait tip warns that "Initialization Complete" in the container log can
