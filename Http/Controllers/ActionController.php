@@ -15,6 +15,7 @@ use Modules\SpatBridge\Services\ConnectionMessage;
 use Modules\SpatBridge\Services\MailboxScope;
 use Modules\SpatBridge\Services\NoteWriter;
 use Modules\SpatBridge\Services\SpatClient;
+use Modules\SpatBridge\Services\Support\CustomerEmails;
 use Modules\SpatBridge\Services\Support\OptionStoreInterface;
 use Psr\Log\LoggerInterface;
 
@@ -234,7 +235,7 @@ class ActionController extends Controller
         }
 
         if ($isAction && $feature instanceof GuardsActionParams) {
-            $refusal = $feature->guardParams($name, $params, $this->customerEmails($conversation));
+            $refusal = $feature->guardParams($name, $params, CustomerEmails::ofConversation($conversation));
             if ($refusal !== null) {
                 return ['error' => [403, $refusal]];
             }
@@ -360,34 +361,14 @@ class ActionController extends Controller
     }
 
     /**
-     * The sidebar caches WordPress data per customer email for a minute;
-     * after an action it must show the new state at once.
+     * The sidebar caches WordPress data per customer address list for a
+     * minute; after an action it must show the new state at once.
      *
      * @param object $conversation
      */
     private function forgetCustomerCache($conversation): void
     {
-        foreach ($this->customerEmails($conversation) as $email) {
-            \Cache::forget('spatbridge.customer.' . md5(strtolower($email)));
-        }
-    }
-
-    /**
-     * The addresses the sidebar looks the customer up by.
-     *
-     * @param object $conversation
-     * @return string[]
-     */
-    private function customerEmails($conversation): array
-    {
-        $emails = [];
-        $customer = $conversation->customer ?? null;
-        if (is_object($customer) && method_exists($customer, 'getMainEmail')) {
-            $emails[] = trim((string) $customer->getMainEmail());
-        }
-        $emails[] = trim((string) ($conversation->customer_email ?? ''));
-
-        return array_values(array_unique(array_filter($emails, 'strlen')));
+        \Cache::forget(CustomerEmails::cacheKey(CustomerEmails::ofConversation($conversation)));
     }
 
     private function paramsJson(array $params): string

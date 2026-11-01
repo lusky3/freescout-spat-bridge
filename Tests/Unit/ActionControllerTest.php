@@ -13,6 +13,7 @@ use Modules\SpatBridge\Features\PlayerCard\PlayerCardFeature;
 use Modules\SpatBridge\Http\Controllers\ActionController;
 use Modules\SpatBridge\Services\ClientResult;
 use Modules\SpatBridge\Services\NoteWriter;
+use Modules\SpatBridge\Services\Support\CustomerEmails;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Tests\Support\FakeCache;
@@ -263,9 +264,12 @@ class ActionControllerTest extends TestCase
         return json_decode($response->getContent(), true);
     }
 
+    /**
+     * The key the sidebar caches this ticket's customer under.
+     */
     private function cacheKey(): string
     {
-        return 'spatbridge.customer.' . md5(strtolower(self::CUSTOMER_EMAIL));
+        return CustomerEmails::cacheKey(CustomerEmails::of($this->conversation->customer, $this->conversation));
     }
 
     // ---- param guard -----------------------------------------------------
@@ -394,7 +398,67 @@ class ActionControllerTest extends TestCase
         $this->assertSame([], $feature->seen);
 
         $controller->preview($this->previewRequest($this->user(), ['params' => '{"who":"x"}']));
-        $this->assertSame([['match', [self::CUSTOMER_EMAIL]]], $feature->seen);
+        $this->assertSame([['match', [strtolower(self::CUSTOMER_EMAIL)]]], $feature->seen);
+    }
+
+    public function test_the_guard_gets_every_address_the_sidebar_looks_up(): void
+    {
+        $this->conversation->customer = new FakeCustomer(
+            self::CUSTOMER_EMAIL,
+            [self::CUSTOMER_EMAIL, 'Second@Example.com']
+        );
+        $this->conversation->customer_email = 'thread@example.com';
+        $feature = $this->guardedFeature();
+        $controller = $this->controller(null, $feature);
+
+        $controller->preview($this->previewRequest($this->user(), ['params' => '{"who":"x"}']));
+
+        $expected = ['jordan.smith@example.com', 'thread@example.com', 'second@example.com'];
+        $this->assertSame([['match', $expected]], $feature->seen);
+        $this->assertSame(
+            $expected,
+            CustomerEmails::of($this->conversation->customer, $this->conversation)
+        );
+    }
+
+    public function test_change_email_accepts_each_of_the_customers_addresses_and_nothing_else(): void
+    {
+        $this->conversation->customer = new FakeCustomer(
+            self::CUSTOMER_EMAIL,
+            [self::CUSTOMER_EMAIL, 'second@example.com']
+        );
+        $this->conversation->customer_email = 'thread@example.com';
+        $controller = $this->controller(null, new PlayerCardFeature());
+
+        foreach (['jordan.smith@example.com', 'SECOND@example.com', 'thread@example.com'] as $i => $old) {
+            $params = json_encode(['old_email' => $old]);
+            $controller->preview($this->previewRequest($this->user(), [
+                'feature' => 'player', 'action' => 'change_email', 'params' => $params,
+            ]));
+            $this->assertSame('spatbridge::action.change_email_form', $controller->rendered[$i][0], $old);
+        }
+
+        $controller->preview($this->previewRequest($this->user(), [
+            'feature' => 'player', 'action' => 'change_email', 'params' => '{"old_email":"someone@example.com"}',
+        ]));
+        $this->assertSame('spatbridge::action.error', $controller->rendered[3][0]);
+        $this->assertSame([], $this->client->calls);
+    }
+
+    public function test_run_forgets_the_cache_entry_the_sidebar_stored_for_every_address(): void
+    {
+        $this->conversation->customer = new FakeCustomer(
+            self::CUSTOMER_EMAIL,
+            [self::CUSTOMER_EMAIL, 'second@example.com']
+        );
+        $this->client->results[] = $this->realRun();
+        $controller = $this->controller();
+        $this->previewed($controller);
+        FakeCache::$store[$this->cacheKey()] = ['sections' => []];
+
+        $controller->run($this->runRequest($this->user()));
+
+        $this->assertArrayNotHasKey($this->cacheKey(), FakeCache::$store);
     }
 
     // ---- preview ---------------------------------------------------------

@@ -47,9 +47,27 @@ class SpatClient
         return $this->post(self::PATH_PING, '{}');
     }
 
-    public function customer(string $email): ClientResult
+    /**
+     * Everything WordPress has for a customer, looked up by every address
+     * in the list (CustomerEmails::of(): normalized, primary first, at most
+     * CustomerEmails::MAX). WordPress refuses an empty or longer list.
+     *
+     * @param string[] $emails
+     */
+    public function customer(array $emails): ClientResult
     {
-        return $this->post(self::PATH_CUSTOMER, (string) json_encode(['email' => $email]));
+        $result = $this->post(self::PATH_CUSTOMER, $this->encode(['emails' => array_values($emails)]));
+
+        $data = $result->ok() ? $result->data() : null;
+        $ignored = is_array($data) && isset($data['ignored']) && is_array($data['ignored']) ? $data['ignored'] : [];
+        if ($ignored !== []) {
+            // WordPress skips a later address it finds invalid and looks up
+            // the rest; worth a trace, not a failure.
+            $this->logger->info('[SpatBridge] WordPress skipped customer address(es) at index '
+                . implode(', ', array_map('strval', array_filter($ignored, 'is_scalar'))) . ' as invalid');
+        }
+
+        return $result;
     }
 
     /**

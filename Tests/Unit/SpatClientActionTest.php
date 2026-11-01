@@ -192,7 +192,7 @@ class SpatClientActionTest extends TestCase
 
     public function test_customer_route_keeps_the_plain_http_error(): void
     {
-        $result = $this->client([$this->wpError(409, 'whatever', 'A message')])->customer('a@example.com');
+        $result = $this->client([$this->wpError(409, 'whatever', 'A message')])->customer(['a@example.com']);
 
         $this->assertSame('http_error', $result->errorCode());
         $this->assertSame('', $result->detail());

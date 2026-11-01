@@ -12,7 +12,7 @@ use GuzzleHttp\Psr7\Response;
 use Modules\SpatBridge\Services\Signer;
 use Modules\SpatBridge\Services\SpatClient;
 use PHPUnit\Framework\TestCase;
-use Psr\Log\NullLogger;
+use Psr\Log\AbstractLogger;
 use Tests\Support\FakeOptionStore;
 
 class SpatClientTest extends TestCase
@@ -24,8 +24,19 @@ class SpatClientTest extends TestCase
     /** @var array<int, array<string, mixed>> */
     private $history = [];
 
+    /** @var AbstractLogger&object{records: array} */
+    private $logger;
+
     private function client(array $responses, string $base = self::BASE, string $secret = self::SECRET): SpatClient
     {
+        $this->logger = new class extends AbstractLogger {
+            public $records = [];
+
+            public function log($level, $message, array $context = [])
+            {
+                $this->records[] = [$level, (string) $message];
+            }
+        };
         $this->history = [];
         $stack = HandlerStack::create(new MockHandler($responses));
         $stack->push(Middleware::history($this->history));
@@ -34,7 +45,7 @@ class SpatClientTest extends TestCase
         $options->set('spatbridge.wp_base_url', $base);
         $options->set('spatbridge.shared_secret', $secret);
 
-        return new SpatClient(new Client(['handler' => $stack]), $options, new NullLogger(), function () {
+        return new SpatClient(new Client(['handler' => $stack]), $options, $this->logger, function () {
             return self::NOW;
         });
     }
@@ -46,14 +57,14 @@ class SpatClientTest extends TestCase
         return new Response($status, [], json_encode($body));
     }
 
-    public function test_customer_sends_signed_json_to_the_customer_route(): void
+    public function test_customer_sends_the_address_list_signed_to_the_customer_route(): void
     {
         $client = $this->client([new Response(200, [], '{}')], self::BASE . '/');
-        $client->customer('a@example.com');
+        $client->customer(['a@example.com', 'b@example.com']);
 
         $this->assertCount(1, $this->history);
         $request = $this->history[0]['request'];
-        $body = '{"email":"a@example.com"}';
+        $body = '{"emails":["a@example.com","b@example.com"]}';
 
         $this->assertSame('POST', $request->getMethod());
         $this->assertSame('https://wp.example/wp-json/spat/v1/freescout/customer', (string) $request->getUri());
@@ -80,13 +91,13 @@ class SpatClientTest extends TestCase
 
     public function test_ok_result_carries_decoded_data_on_200(): void
     {
-        $client = $this->client([new Response(200, [], '{"email":"a@example.com","player_ids":[1]}')]);
-        $result = $client->customer('a@example.com');
+        $client = $this->client([new Response(200, [], '{"emails":["a@example.com"],"player_ids":[1,4]}')]);
+        $result = $client->customer(['a@example.com']);
 
         $this->assertTrue($result->ok());
         $this->assertSame(200, $result->status());
         $this->assertSame('', $result->errorCode());
-        $this->assertSame(['email' => 'a@example.com', 'player_ids' => [1]], $result->data());
+        $this->assertSame(['emails' => ['a@example.com'], 'player_ids' => [1, 4]], $result->data());
         $this->assertGreaterThanOrEqual(0, $result->latencyMs());
     }
 
@@ -95,7 +106,7 @@ class SpatClientTest extends TestCase
      */
     public function test_maps_wp_error_codes(Response $response, int $status, string $expected): void
     {
-        $result = $this->client([$response])->customer('a@example.com');
+        $result = $this->client([$response])->customer(['a@example.com']);
 
         $this->assertFalse($result->ok());
         $this->assertSame($status, $result->status());
@@ -126,7 +137,7 @@ class SpatClientTest extends TestCase
 
     public function test_non_json_200_is_bad_response(): void
     {
-        $result = $this->client([new Response(200, [], '<html>not json</html>')])->customer('a@example.com');
+        $result = $this->client([new Response(200, [], '<html>not json</html>')])->customer(['a@example.com']);
 
         $this->assertFalse($result->ok());
         $this->assertSame(200, $result->status());
@@ -138,7 +149,7 @@ class SpatClientTest extends TestCase
     {
         $result = $this->client([
             new ConnectException('Connection refused', new Request('POST', self::BASE)),
-        ])->customer('a@example.com');
+        ])->customer(['a@example.com']);
 
         $this->assertFalse($result->ok());
         $this->assertSame(0, $result->status());
@@ -152,14 +163,14 @@ class SpatClientTest extends TestCase
                 'cURL error 28: Operation timed out after 3000 milliseconds',
                 new Request('POST', self::BASE)
             ),
-        ])->customer('a@example.com');
+        ])->customer(['a@example.com']);
 
         $this->assertSame('timeout', $result->errorCode());
     }
 
     public function test_unexpected_exception_is_network(): void
     {
-        $result = $this->client([new \RuntimeException('weird')])->customer('a@example.com');
+        $result = $this->client([new \RuntimeException('weird')])->customer(['a@example.com']);
 
         $this->assertSame('network', $result->errorCode());
     }
@@ -167,7 +178,7 @@ class SpatClientTest extends TestCase
     public function test_missing_url_or_secret_is_not_configured_without_http_call(): void
     {
         $noUrl = $this->client([], '');
-        $this->assertSame('not_configured', $noUrl->customer('a@example.com')->errorCode());
+        $this->assertSame('not_configured', $noUrl->customer(['a@example.com'])->errorCode());
         $this->assertCount(0, $this->history);
 
         $noSecret = $this->client([], self::BASE, '');
@@ -198,10 +209,43 @@ class SpatClientTest extends TestCase
     {
         $result = $this->client([
             new Response(302, ['Location' => 'https://login.example/sso']),
-        ])->customer('a@example.com');
+        ])->customer(['a@example.com']);
 
         $this->assertSame('redirected', $result->errorCode());
         $this->assertSame(302, $result->status());
         $this->assertSame('https://login.example/sso', $result->detail());
+    }
+
+    public function test_the_list_is_sent_as_a_json_list_whatever_its_keys(): void
+    {
+        $this->client([new Response(200, [], '{}')])->customer([3 => 'a@example.com', 7 => 'b@example.com']);
+
+        $this->assertSame(
+            '{"emails":["a@example.com","b@example.com"]}',
+            (string) $this->history[0]['request']->getBody()
+        );
+    }
+
+    public function test_addresses_wordpress_skipped_are_noted_at_info_and_the_lookup_still_succeeds(): void
+    {
+        $body = '{"emails":["a@example.com"],"player_ids":[],"sections":{},"missing":{},"ignored":[1,3]}';
+        $result = $this->client([new Response(200, [], $body)])
+            ->customer(['a@example.com', 'bad', 'c@example.com', 'worse']);
+
+        $this->assertTrue($result->ok());
+        $this->assertSame([1, 3], $result->data()['ignored']);
+        $this->assertCount(1, $this->logger->records);
+        $this->assertSame('info', $this->logger->records[0][0]);
+        $this->assertStringContainsString('index 1, 3', $this->logger->records[0][1]);
+    }
+
+    public function test_no_or_an_empty_ignored_list_logs_nothing(): void
+    {
+        foreach (['{"emails":["a@example.com"]}', '{"emails":["a@example.com"],"ignored":[]}'] as $body) {
+            $result = $this->client([new Response(200, [], $body)])->customer(['a@example.com']);
+
+            $this->assertTrue($result->ok());
+            $this->assertSame([], $this->logger->records, $body);
+        }
     }
 }
