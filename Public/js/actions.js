@@ -262,7 +262,7 @@
             var raw = hours ? hours.value.trim() : '';
             var count = raw === '' ? NaN : Number(raw);
             if (!Number.isInteger(count) || count < 1 || count > 720) {
-                showError('Enter a number of hours from 1 to 720.');
+                showError(form.getAttribute('data-invalid-text') || '');
                 return;
             }
             var params = {};
@@ -326,7 +326,7 @@
             }
             var address = input.value.trim();
             if (address === '' || !input.checkValidity()) {
-                showError('Enter a valid new email address.');
+                showError(form.getAttribute('data-invalid-text') || '');
                 return;
             }
             var params = {};

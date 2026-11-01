@@ -36,6 +36,29 @@ class PickAndTabsMarkupTest extends TestCase
         $this->assertStringContainsString('use.title =', $js);
     }
 
+    /**
+     * The forms' validation messages come from the views through __(), like
+     * every other pop-up string, not from text fixed in the script.
+     */
+    public function test_form_validation_messages_are_translated_in_the_views(): void
+    {
+        $js = $this->source('Public/js/actions.js');
+        $forms = [
+            'Resources/views/action/waitlist_offer_form.blade.php' => 'Enter a number of hours from 1 to 720.',
+            'Resources/views/action/change_email_form.blade.php' => 'Enter a valid new email address.',
+        ];
+
+        foreach ($forms as $view => $message) {
+            $this->assertStringContainsString(
+                'data-invalid-text="{{ __(\'' . $message . '\') }}"',
+                $this->source($view),
+                $view
+            );
+            $this->assertStringNotContainsString($message, $js);
+        }
+        $this->assertSame(2, substr_count($js, "form.getAttribute('data-invalid-text')"));
+    }
+
     public function test_tab_labels_do_not_wrap(): void
     {
         $view = $this->source('Resources/views/sidebar/tabbed.blade.php');
