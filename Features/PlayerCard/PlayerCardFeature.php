@@ -12,9 +12,10 @@ use Modules\SpatBridge\Services\Support\RegistrationOutcome;
 use Modules\SpatBridge\Services\Support\Timezones;
 
 /**
- * Player card: one row per player on the customer's email, plus registration
- * rows that need an agent's attention and a short history. The first player
- * row offers Change email; each attention row offers Re-run registration.
+ * Player card: one row per player found under any of the customer's
+ * addresses, plus registration rows that need an agent's attention and a
+ * short history. Each player row offers Change email for the address that
+ * player was found under; each attention row offers Re-run registration.
  *
  * Wire data comes from another system, so every key may be missing and every
  * value may have the wrong type; nothing here throws on that.
@@ -57,7 +58,9 @@ final class PlayerCardFeature implements Feature, GuardsActionParams, AddsNoteFo
         $playerSection = $this->arr($sections, 'player');
         $registration = $this->arr($sections, 'registration');
         $season = $this->str($playerSection, 'current_season');
-        $email = $this->str($playerSection, 'email');
+        // The primary address, for a player WordPress found under none of
+        // the customer's addresses directly (e.g. through its login).
+        $primary = $this->str($playerSection, 'email');
 
         $rows = [];
         $summaries = [];
@@ -68,7 +71,8 @@ final class PlayerCardFeature implements Feature, GuardsActionParams, AddsNoteFo
                 continue;
             }
             $current = $this->currentAssignment($player);
-            $rows[] = $this->playerRow($player, $current, $season, $rows === [] ? $email : '');
+            $email = $this->str($player, 'email');
+            $rows[] = $this->playerRow($player, $current, $season, $email === '' ? $primary : $email);
             $summaries[] = $this->playerSummary($player, $current);
             if ($current === null) {
                 $attention = true;
@@ -168,9 +172,9 @@ final class PlayerCardFeature implements Feature, GuardsActionParams, AddsNoteFo
     }
 
     /**
-     * After a change of email WordPress no longer knows the ticket's address,
-     * so the card disappears from this ticket until the customer's email in
-     * FreeScout is updated too.
+     * After a change of email WordPress no longer has the old address, so
+     * the player leaves this ticket's card until the new address is added
+     * to the customer in FreeScout too.
      */
     public function noteFollowUp(string $action, array $params): ?string
     {
@@ -178,8 +182,8 @@ final class PlayerCardFeature implements Feature, GuardsActionParams, AddsNoteFo
             return null;
         }
 
-        return __("The ARL League card follows the ticket's email address. To see it here, "
-            . "update the customer's email in FreeScout to the new address.");
+        return __("The ARL League card looks the customer up by their email addresses in FreeScout. "
+            . "To see this player here, add the new address to the customer in FreeScout.");
     }
 
     private function playerRow(array $player, ?array $current, string $season, string $email): PanelRow
