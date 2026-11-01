@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- README: Update Now no longer claims to do the whole manual upgrade (it
+  installs over the existing folder and keeps files a release dropped), the
+  boot-wait tip warns that "Initialization Complete" in the container log can
+  be the previous boot's, the install step links the release zip, and the
+  verification note covers the published 1.0.0 asset.
+
 ## [1.0.0] - 2026-11-01
 
 ### Added
