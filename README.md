@@ -44,14 +44,18 @@ and its web server user.
 What has been checked: the Install steps and the Upgrading steps below were
 run exactly as written on `nfrastack/freescout:2.2.21` (FreeScout 1.8.248,
 PHP 8.5.12), using a release zip built with `git archive`, followed by the
-21-check end-to-end suite.
+21-check end-to-end suite. The published 1.0.0 release zip was then installed
+the same way, passed the same suite, and was updated from an older version
+with **Update Now**.
 
 Run every `php artisan` command as the web server user, never as root. Files
 that root creates in FreeScout's cache are unwritable for the web server, and
 the sidebar then shows nothing.
 
-1. Get the module. Download `freescout-spat-bridge.zip` from the release, or
-   build the same archive from a tag:
+1. Get the module. Download `freescout-spat-bridge.zip` from the latest
+   release
+   (`https://github.com/lusky3/freescout-spat-bridge/releases/latest/download/freescout-spat-bridge.zip`),
+   or build the same archive from a tag:
 
    ```sh
    git archive --format=zip --prefix=SpatBridge/ vX.Y.Z -o freescout-spat-bridge.zip
@@ -60,7 +64,9 @@ the sidebar then shows nothing.
    The top-level folder must be exactly `SpatBridge`, to match the module's
    PHP namespace.
 
-2. Extract it and copy it to `/data/Modules/SpatBridge`:
+2. Extract it into an empty directory (an old `SpatBridge` folder left from an
+   earlier extraction would be merged into the new one) and copy it to
+   `/data/Modules/SpatBridge`:
 
    ```sh
    unzip -q freescout-spat-bridge.zip
@@ -75,10 +81,12 @@ the sidebar then shows nothing.
    ```
 
 4. Restart the container: `docker restart freescout`, then wait until
-   FreeScout has finished booting (about 15 seconds): the login page loads,
-   or `docker logs freescout` shows "Initialization Complete". Running step 5
-   too early fails with `Module [ARL League] does not exist!`; run it again
-   once the boot has finished.
+   FreeScout has finished booting (about 15 seconds): wait for the login page
+   to load. Don't go by `docker logs freescout` showing "Initialization
+   Complete" alone, because right after a restart that line is still the
+   previous boot's. Running step 5 too early fails with
+   `Module [ARL League] does not exist!`; run it again once the boot has
+   finished.
 5. Enable and install the module as the web server user. A restart alone
    leaves it Disabled:
 
@@ -140,10 +148,12 @@ volumes persist.
 
 ### Upgrading
 
-Once the repository is public, **Manage → Modules → ARL League → Update Now**
-does all of this. To upgrade by hand, with the new release's
-`freescout-spat-bridge.zip` extracted to `SpatBridge` as in Install steps 1
-and 2:
+**Manage → Modules → ARL League → Update Now** installs the latest release
+over the existing folder and runs the module install for you. It does not
+remove files that a release dropped, so it suits most upgrades. When a
+release's changelog says files were removed, upgrade by hand instead, with
+the new release's `freescout-spat-bridge.zip` extracted to `SpatBridge` as in
+Install steps 1 and 2:
 
 1. Remove the old module folder. Copying over it would merge the two versions
    and keep files the new one dropped. Run steps 1 and 2 together: in between,
@@ -304,7 +314,9 @@ inputs.
 Releases are cut from `main`, and FreeScout's **Update Now** button uses them.
 
 Every PR that changes shipped code adds a line under `## [Unreleased]` in
-`CHANGELOG.md`. CI checks this. Files excluded from the release archive, such
+`CHANGELOG.md`. CI checks this. If a change removes a shipped file, say so in
+that line: Update Now doesn't delete files, so upgraders need to know to
+remove the old folder by hand. Files excluded from the release archive, such
 as tests, `docker/`, and `scripts/`, don't need an entry.
 
 To release version `X.Y.Z`:
