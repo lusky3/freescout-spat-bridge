@@ -7,7 +7,10 @@ published on GitHub; see Install below.
 ## What it does
 
 - Show league information for the ticket's customer in the conversation
-  sidebar:
+  sidebar. The customer is looked up by every address FreeScout has for
+  them: the main email, the conversation's customer address and the
+  customer's other emails (up to 5), so records under a secondary address
+  show too.
   - **Player card:** team, number, position, next game, registration
     history.
   - **e-Transfers:** matched and unmatched transfers, including possible
@@ -31,6 +34,10 @@ plugins.
 
 - Self-hosted FreeScout.
 - PHP 7.4 or 8.0+.
+- SPAT with the list-based customer lookup
+  ([SportsPress-Admin-Tools #243](https://github.com/lusky3/SportsPress-Admin-Tools/pull/243)).
+  An older SPAT refuses the sidebar's request, and the sidebar says "League
+  info unavailable".
 - Network access from the FreeScout host to the WordPress site, and from
   the WordPress site to FreeScout for events.
 
@@ -265,6 +272,10 @@ through `php artisan tinker`, and `wp` on the WordPress side, that:
   that isn't the ticket's customer's, then changes the player, the login and
   the order without an "email changed" notice;
 - Re-run registration reports the outcome WordPress gives;
+- a waitlist entry and a player recorded under the customer's secondary
+  address show on the ticket once the FreeScout customer carries that
+  address, and Change email accepts it (the check creates these records in
+  WordPress and removes them afterwards);
 - events WordPress sends become one note each (a resent duplicate is
   ignored), open a ticket without emailing the customer when the type's
   create switch is on, and arrive on WordPress's retry after FreeScout was
