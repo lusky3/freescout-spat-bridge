@@ -1,10 +1,10 @@
 # FreeScout SPAT Bridge
 
 A FreeScout module that connects the ARL helpdesk (help.arl.hockey) to
-SportsPress Admin Tools (SPAT) on the league's WordPress site. It is in
-early development, and there is no release yet.
+SportsPress Admin Tools (SPAT) on the league's WordPress site. Releases are
+published on GitHub; see Install below.
 
-## What it will do
+## What it does
 
 - Show league information for the ticket's customer in the conversation
   sidebar:
@@ -317,8 +317,8 @@ To release version `X.Y.Z`:
    archive and `version.json`, then publishes them. It refuses a tag whose
    version doesn't match `module.json`, has no changelog section, or isn't
    newer than the previous release.
-4. Make the repository **public** before the first release. FreeScout's
-   Update Now can't download from a private repository.
+4. The repository must stay **public**: FreeScout's Update Now can't download
+   from a private repository.
 
 ## License
 
