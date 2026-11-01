@@ -14,9 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   customer's other emails (trimmed, lower-cased, de-duplicated, at most 5).
   Requires SPAT with the list-based customer lookup
   (SportsPress-Admin-Tools #243); an older SPAT refuses the request.
-- Change email… is offered on each player row, for the address WordPress
-  found that player under (or the customer's primary address), and accepts
-  any of the customer's addresses. The note after a change asks to add the
+- Change email… is offered on each player row WordPress found under one of
+  the customer's addresses, for that address, and accepts any of the
+  customer's addresses. A player WordPress reports without an address gets
+  none, since the primary address may hold other people's records. The note after a change asks to add the
   new address to the customer in FreeScout.
 - Waitlist rows name the registrant, and the address when it isn't the
   primary one, when a customer's entries belong to more than one person or

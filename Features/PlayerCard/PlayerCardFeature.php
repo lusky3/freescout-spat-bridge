@@ -58,9 +58,6 @@ final class PlayerCardFeature implements Feature, GuardsActionParams, AddsNoteFo
         $playerSection = $this->arr($sections, 'player');
         $registration = $this->arr($sections, 'registration');
         $season = $this->str($playerSection, 'current_season');
-        // The primary address, for a player WordPress found under none of
-        // the customer's addresses directly (e.g. through its login).
-        $primary = $this->str($playerSection, 'email');
 
         $rows = [];
         $summaries = [];
@@ -71,8 +68,10 @@ final class PlayerCardFeature implements Feature, GuardsActionParams, AddsNoteFo
                 continue;
             }
             $current = $this->currentAssignment($player);
-            $email = $this->str($player, 'email');
-            $rows[] = $this->playerRow($player, $current, $season, $email === '' ? $primary : $email);
+            // Only the address WordPress found this player under. Without
+            // one there is no Change email: the primary address may hold
+            // other people's records.
+            $rows[] = $this->playerRow($player, $current, $season, $this->str($player, 'email'));
             $summaries[] = $this->playerSummary($player, $current);
             if ($current === null) {
                 $attention = true;

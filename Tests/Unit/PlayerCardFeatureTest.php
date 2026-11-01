@@ -250,19 +250,20 @@ class PlayerCardFeatureTest extends TestCase
         );
     }
 
-    public function test_a_player_without_its_own_address_falls_back_to_the_primary_address(): void
+    public function test_a_player_without_its_own_address_gets_no_change_email(): void
     {
+        // The primary address may hold other people's records; changing it
+        // from this row would change theirs, not this player's.
         $panel = (new PlayerCardFeature())->present($this->withEmail([
             $this->player(['email' => null]),
             $this->player(['name' => 'Second']),
             $this->player(['name' => 'Third', 'email' => ['not', 'a string']]),
+            $this->player(['name' => 'Fourth', 'email' => '  ']),
         ], null, 'primary@example.com'));
 
+        $this->assertCount(4, $panel->rows());
         foreach ($panel->rows() as $row) {
-            $this->assertSame(
-                [['player', 'change_email', 'Change email…', ['old_email' => 'primary@example.com']]],
-                $this->actionsOf($row)
-            );
+            $this->assertSame([], $row->actions());
         }
     }
 
