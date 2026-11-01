@@ -131,10 +131,17 @@ class ActionControllerTest extends TestCase
             public $conversations = [];
             /** @var array<int, array{0: string, 1: array, 2: int}> */
             public $rendered = [];
+            /** @var string[] The customer_email of each of the customer's tickets. */
+            public $ticketAddresses = [];
 
             protected function findConversation(int $id)
             {
                 return $this->conversations[$id] ?? null;
+            }
+
+            protected function customerTicketAddresses($conversation): array
+            {
+                return $this->ticketAddresses;
             }
 
             protected function renderView(string $view, array $data, int $status)
@@ -443,6 +450,28 @@ class ActionControllerTest extends TestCase
         ]));
         $this->assertSame('spatbridge::action.error', $controller->rendered[3][0]);
         $this->assertSame([], $this->client->calls);
+    }
+
+    public function test_run_also_forgets_the_entries_of_the_customers_other_tickets(): void
+    {
+        $this->conversation->customer = new FakeCustomer(
+            self::CUSTOMER_EMAIL,
+            [self::CUSTOMER_EMAIL, 'second@example.com']
+        );
+        $this->client->results[] = $this->realRun();
+        $controller = $this->controller();
+        $controller->ticketAddresses = [self::CUSTOMER_EMAIL, 'Other-Thread@Example.com', null, ''];
+        $this->previewed($controller);
+        $other = clone $this->conversation;
+        $other->customer_email = 'Other-Thread@Example.com';
+        $otherKey = CustomerEmails::cacheKey(CustomerEmails::ofConversation($other));
+        FakeCache::$store[$otherKey] = ['sections' => []];
+        FakeCache::$store['spatbridge.customer.unrelated'] = ['sections' => []];
+
+        $controller->run($this->runRequest($this->user()));
+
+        $this->assertArrayNotHasKey($otherKey, FakeCache::$store);
+        $this->assertArrayHasKey('spatbridge.customer.unrelated', FakeCache::$store);
     }
 
     public function test_run_forgets_the_cache_entry_the_sidebar_stored_for_every_address(): void

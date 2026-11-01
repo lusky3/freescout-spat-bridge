@@ -362,13 +362,26 @@ class ActionController extends Controller
 
     /**
      * The sidebar caches WordPress data per customer address list for a
-     * minute; after an action it must show the new state at once.
+     * minute; after an action it must show the new state at once. The list
+     * includes the ticket's own customer address, so the customer's other
+     * tickets may be cached under other keys; those are cleared too.
      *
      * @param object $conversation
      */
     private function forgetCustomerCache($conversation): void
     {
-        \Cache::forget(CustomerEmails::cacheKey(CustomerEmails::ofConversation($conversation)));
+        $customer = $conversation->customer ?? null;
+        $keys = [CustomerEmails::cacheKey(CustomerEmails::of($customer, $conversation))];
+        foreach ($this->customerTicketAddresses($conversation) as $address) {
+            if (is_string($address) && trim($address) !== '') {
+                $ticket = (object) ['customer_email' => $address];
+                $keys[] = CustomerEmails::cacheKey(CustomerEmails::of($customer, $ticket));
+            }
+        }
+
+        foreach (array_unique($keys) as $key) {
+            \Cache::forget($key);
+        }
     }
 
     private function paramsJson(array $params): string
@@ -438,6 +451,22 @@ class ActionController extends Controller
     protected function findConversation(int $id)
     {
         return $id > 0 ? \App\Conversation::find($id) : null;
+    }
+
+    /**
+     * The distinct customer_email of every ticket of this conversation's
+     * customer.
+     *
+     * @param object $conversation
+     * @return array<int, string|null>
+     */
+    protected function customerTicketAddresses($conversation): array
+    {
+        $customerId = (int) ($conversation->customer_id ?? 0);
+
+        return $customerId > 0
+            ? \App\Conversation::where('customer_id', $customerId)->distinct()->pluck('customer_email')->all()
+            : [];
     }
 
     /**
