@@ -366,21 +366,30 @@ class ActionController extends Controller
      * includes the ticket's own customer address, so the customer's other
      * tickets may be cached under other keys; those are cleared too.
      *
+     * The action has already run, so a cache or database error here is
+     * logged and never turns the answer into a failure. The log line holds
+     * the error only, not the customer's addresses.
+     *
      * @param object $conversation
      */
     private function forgetCustomerCache($conversation): void
     {
-        $customer = $conversation->customer ?? null;
-        $keys = [CustomerEmails::cacheKey(CustomerEmails::of($customer, $conversation))];
-        foreach ($this->customerTicketAddresses($conversation) as $address) {
-            if (is_string($address) && trim($address) !== '') {
-                $ticket = (object) ['customer_email' => $address];
-                $keys[] = CustomerEmails::cacheKey(CustomerEmails::of($customer, $ticket));
+        try {
+            $customer = $conversation->customer ?? null;
+            $own = CustomerEmails::cacheKey(CustomerEmails::of($customer, $conversation));
+            \Cache::forget($own);
+            foreach ($this->customerTicketAddresses($conversation) as $address) {
+                if (is_string($address) && trim($address) !== '') {
+                    $ticket = (object) ['customer_email' => $address];
+                    $key = CustomerEmails::cacheKey(CustomerEmails::of($customer, $ticket));
+                    if ($key !== $own) {
+                        \Cache::forget($key);
+                    }
+                }
             }
-        }
-
-        foreach (array_unique($keys) as $key) {
-            \Cache::forget($key);
+        } catch (\Throwable $e) {
+            $this->logger->warning('[SpatBridge] clearing the sidebar cache after an action failed: '
+                . get_class($e) . ' (' . $e->getCode() . '): ' . $e->getMessage());
         }
     }
 

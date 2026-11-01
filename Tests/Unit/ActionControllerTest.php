@@ -15,7 +15,7 @@ use Modules\SpatBridge\Services\ClientResult;
 use Modules\SpatBridge\Services\NoteWriter;
 use Modules\SpatBridge\Services\Support\CustomerEmails;
 use PHPUnit\Framework\TestCase;
-use Psr\Log\NullLogger;
+use Psr\Log\AbstractLogger;
 use Tests\Support\FakeCache;
 use Tests\Support\FakeCustomer;
 use Tests\Support\FakeOptionStore;
@@ -34,6 +34,8 @@ class ActionControllerTest extends TestCase
     private $conversation;
     /** @var object In another mailbox, with another id. */
     private $otherConversation;
+    /** @var AbstractLogger&object{records: array} */
+    private $logger;
     /** @var string The key the run requests post; previewed() sets it. */
     private $previewKey = self::KEY;
 
@@ -41,6 +43,14 @@ class ActionControllerTest extends TestCase
     {
         FakeCache::reset();
         Thread::reset();
+        $this->logger = new class extends AbstractLogger {
+            public $records = [];
+
+            public function log($level, $message, array $context = [])
+            {
+                $this->records[] = [$level, (string) $message];
+            }
+        };
         $this->client = new FakeSpatClient();
         $this->options = new FakeOptionStore();
 
@@ -125,13 +135,13 @@ class ActionControllerTest extends TestCase
             $registry,
             $this->options,
             new NoteWriter(),
-            new NullLogger()
+            $this->logger
         ) extends ActionController {
             /** @var array<int, object> */
             public $conversations = [];
             /** @var array<int, array{0: string, 1: array, 2: int}> */
             public $rendered = [];
-            /** @var string[] The customer_email of each of the customer's tickets. */
+            /** @var string[]|\Throwable The customer_email of each of the customer's tickets. */
             public $ticketAddresses = [];
 
             protected function findConversation(int $id)
@@ -141,6 +151,10 @@ class ActionControllerTest extends TestCase
 
             protected function customerTicketAddresses($conversation): array
             {
+                if ($this->ticketAddresses instanceof \Throwable) {
+                    throw $this->ticketAddresses;
+                }
+
                 return $this->ticketAddresses;
             }
 
@@ -472,6 +486,29 @@ class ActionControllerTest extends TestCase
 
         $this->assertArrayNotHasKey($otherKey, FakeCache::$store);
         $this->assertArrayHasKey('spatbridge.customer.unrelated', FakeCache::$store);
+    }
+
+    public function test_a_failure_clearing_the_cache_does_not_fail_an_action_that_ran(): void
+    {
+        $this->client->results[] = $this->realRun();
+        $controller = $this->controller();
+        $controller->ticketAddresses = new \RuntimeException('SQLSTATE[HY000] gone away');
+        $this->previewed($controller);
+        FakeCache::$store[$this->cacheKey()] = ['sections' => []];
+
+        $response = $controller->run($this->runRequest($this->user()));
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('success', $this->json($response)['status']);
+        $this->assertCount(1, Thread::$created);
+        // The ticket's own entry goes before the lookup of the other tickets.
+        $this->assertArrayNotHasKey($this->cacheKey(), FakeCache::$store);
+        $this->assertCount(1, $this->logger->records);
+        [$level, $message] = $this->logger->records[0];
+        $this->assertSame('warning', $level);
+        $this->assertStringContainsString('RuntimeException', $message);
+        $this->assertStringContainsString('gone away', $message);
+        $this->assertStringNotContainsString(strtolower(self::CUSTOMER_EMAIL), strtolower($message));
     }
 
     public function test_run_forgets_the_cache_entry_the_sidebar_stored_for_every_address(): void
