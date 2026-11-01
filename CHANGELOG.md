@@ -50,6 +50,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Registration outcomes added in SPAT 1.10.0 now read in plain language on the
+  Player card (attention rows and history) and in event notes: a name match
+  that conflicts with the record's account or email says it needs manual
+  review, name-only matches that could not be verified say so, and a refused
+  account link says the player belongs to another account. Other outcome codes
+  read as before.
 - README: the install steps are the production runbook (release archive into
   `/data/Modules/SpatBridge`, ownership fix, enable and install as the web
   server user), with what was actually checked and where. Cloning is kept as
