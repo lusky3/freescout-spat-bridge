@@ -53,7 +53,7 @@ final class PlayerCardFeature implements Feature, GuardsActionParams, AddsNoteFo
         return ['player', 'registration'];
     }
 
-    public function present(array $sections): ?Panel
+    public function present(array $sections, array $emails = []): ?Panel
     {
         $playerSection = $this->arr($sections, 'player');
         $registration = $this->arr($sections, 'registration');

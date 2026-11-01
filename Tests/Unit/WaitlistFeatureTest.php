@@ -246,7 +246,108 @@ class WaitlistFeatureTest extends TestCase
         $panel = $this->present([$this->entry(['status' => 'expired'])]);
 
         $this->assertTrue($panel->attention());
-        $this->assertSame('On the S2026 waitlist', $panel->summary());
+        $this->assertSame('S2026 Goalie offer expired', $panel->summary());
+    }
+
+    public function test_a_queued_entry_wins_the_summary_over_an_expired_one(): void
+    {
+        $panel = $this->present([
+            $this->entry(['status' => 'expired']),
+            $this->entry(['id' => 8, 'position' => 'player', 'season' => 'F2026']),
+        ]);
+
+        $this->assertSame('On the F2026 waitlist', $panel->summary());
+    }
+
+    // ---- registrants -------------------------------------------------------
+
+    /**
+     * @param array<int, array> $entries
+     * @param string[] $emails The customer addresses WordPress looked up, primary first.
+     */
+    private function presentFor(array $entries, array $emails = ['jordan@example.com'])
+    {
+        return (new WaitlistFeature())->present(['waitlist' => ['entries' => $entries]], $emails);
+    }
+
+    private function registrant(string $name, string $email, array $overrides = []): array
+    {
+        return $this->entry(array_merge(['name' => $name, 'email' => $email], $overrides));
+    }
+
+    public function test_one_registrant_under_the_primary_address_looks_exactly_as_before(): void
+    {
+        $plain = $this->present([$this->entry(), $this->entry(['id' => 8, 'position' => 'player'])]);
+        $panel = $this->presentFor([
+            $this->registrant('Jordan Smith', 'jordan@example.com'),
+            $this->registrant('Jordan Smith', 'Jordan@Example.com ', ['id' => 8, 'position' => 'player']),
+        ]);
+
+        $this->assertSame($plain->rows()[0]->lines(), $panel->rows()[0]->lines());
+        $this->assertSame($plain->rows()[1]->lines(), $panel->rows()[1]->lines());
+        $this->assertSame(['On waitlist since Aug 3'], $panel->rows()[0]->lines());
+    }
+
+    public function test_two_registrants_on_one_address_are_named_on_each_row(): void
+    {
+        $panel = $this->presentFor([
+            $this->registrant('Jordan Smith', 'jordan@example.com'),
+            $this->registrant('Riley Smith', 'jordan@example.com', ['id' => 8]),
+        ]);
+
+        $this->assertSame('Jordan Smith', $panel->rows()[0]->lines()[0]);
+        $this->assertSame('Riley Smith', $panel->rows()[1]->lines()[0]);
+        $this->assertSame('On waitlist since Aug 3', $panel->rows()[1]->lines()[1]);
+    }
+
+    public function test_an_entry_under_another_address_shows_who_and_which_address(): void
+    {
+        $panel = $this->presentFor([
+            $this->registrant('Jordan Smith', 'jordan@example.com'),
+            $this->registrant('Sam Smith', 'sam@example.com', ['id' => 8]),
+        ], ['jordan@example.com', 'sam@example.com']);
+
+        $this->assertSame('Jordan Smith', $panel->rows()[0]->lines()[0]);
+        $this->assertSame('Sam Smith · sam@example.com', $panel->rows()[1]->lines()[0]);
+    }
+
+    public function test_a_lone_entry_under_a_secondary_address_names_the_address(): void
+    {
+        $row = $this->presentFor(
+            [$this->registrant('Jordan Smith', 'other@example.com')],
+            ['jordan@example.com', 'other@example.com']
+        )->rows()[0];
+
+        $this->assertSame(['Jordan Smith · other@example.com', 'On waitlist since Aug 3'], $row->lines());
+    }
+
+    public function test_without_a_name_the_address_alone_is_shown(): void
+    {
+        $row = $this->presentFor(
+            [$this->registrant('', 'other@example.com')],
+            ['jordan@example.com', 'other@example.com']
+        )->rows()[0];
+
+        $this->assertSame('other@example.com', $row->lines()[0]);
+    }
+
+    public function test_without_the_lookup_addresses_two_addresses_still_tell_the_rows_apart(): void
+    {
+        $panel = $this->presentFor([
+            $this->registrant('Jordan Smith', 'jordan@example.com'),
+            $this->registrant('Jordan Smith', 'sam@example.com', ['id' => 8]),
+        ], []);
+
+        $this->assertSame('Jordan Smith · jordan@example.com', $panel->rows()[0]->lines()[0]);
+        $this->assertSame('Jordan Smith · sam@example.com', $panel->rows()[1]->lines()[0]);
+    }
+
+    public function test_entries_without_registrant_fields_look_as_before(): void
+    {
+        $panel = $this->presentFor([$this->entry(), $this->entry(['id' => 8, 'name' => ['x'], 'email' => 5])]);
+
+        $this->assertSame(['On waitlist since Aug 3'], $panel->rows()[0]->lines());
+        $this->assertSame(['On waitlist since Aug 3'], $panel->rows()[1]->lines());
     }
 
     public function test_panel_identity(): void

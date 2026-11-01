@@ -23,9 +23,11 @@ interface Feature
 
     /**
      * @param array $sections The response's `sections` map.
+     * @param string[] $emails The customer addresses WordPress looked up,
+     *        primary first (the response's `emails`).
      * @return Panel|null Null when there is nothing to show for this customer.
      */
-    public function present(array $sections): ?Panel;
+    public function present(array $sections, array $emails = []): ?Panel;
 
     /**
      * The row actions this feature offers, e.g. ['match']. The action

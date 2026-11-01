@@ -81,7 +81,7 @@ class ActionControllerTest extends TestCase
                 return ['etransfers'];
             }
 
-            public function present(array $sections): ?Panel
+            public function present(array $sections, array $emails = []): ?Panel
             {
                 return null;
             }
@@ -317,7 +317,7 @@ class ActionControllerTest extends TestCase
                 return $this->inner->providerKeys();
             }
 
-            public function present(array $sections): ?Panel
+            public function present(array $sections, array $emails = []): ?Panel
             {
                 return null;
             }
