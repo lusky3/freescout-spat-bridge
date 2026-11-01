@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-01
+
 ### Added
 
 - Migration notes for SplmWaitlist in the README, and a settings-page warning
