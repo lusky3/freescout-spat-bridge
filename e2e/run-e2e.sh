@@ -4,7 +4,8 @@
 # and FreeScout (with this module), then assert headlessly, through
 # `php artisan tinker`, that the sidebar Player card, the e-Transfers and
 # Waitlist panels, the action framework (preview, run, permissions, notes),
-# the Player card actions and the events WordPress sends work end to end.
+# the Player card actions, a lookup by a customer's secondary address and
+# the events WordPress sends work end to end.
 # WordPress-side results (captured mail, changed emails, the event outbox) are
 # checked with `wp` in the WordPress container between the tinker phases.
 #
@@ -50,6 +51,9 @@ NOCAP_PASSWORD="${E2E_NOCAP_PASSWORD:-$(openssl rand -hex 12)}"
 EVENTS_URL="http://freescout-web/spatbridge/events"
 # The fixture customer's address as WordPress stores it.
 CUSTOMER_EMAIL="fixture-bridge@example.test"
+# Another address of the same customer. The fixtures have nothing under it;
+# the secondary-address check puts a waitlist entry and a player there.
+SECONDARY_EMAIL="fixture-bridge.alt@example.test"
 
 # Every check, in the order the results are printed. A check passes when
 # some phase printed `PASS <name>` and none printed `FAIL <name>: ...`.
@@ -70,13 +74,14 @@ CHECKS=(
     change_email_flow
     change_email_foreign_old_email
     rerun_registration
+    secondary_address_lookup
     event_unmatched_notes_ticket
     event_duplicate_ignored
     event_creates_ticket_when_enabled
     event_retry_after_freescout_down
     cache_not_root_owned
 )
-EXPECTED_CHECKS=21
+EXPECTED_CHECKS=22
 
 # Checks that span phases: how many `STEP <name>` lines (steps that passed
 # before the last one) each needs. A phase that dies prints nothing, so a
@@ -87,6 +92,7 @@ declare -A CHECK_STEPS=(
     [change_email_flow]=3                # in-use refusal; WP unchanged; the change
     [change_email_foreign_old_email]=1   # WP unchanged
     [rerun_registration]=1               # name_rejected order found in WP
+    [secondary_address_lookup]=2         # records created in WP; found in FreeScout
     [event_unmatched_notes_ticket]=1     # outbox row sent once
     [event_creates_ticket_when_enabled]=2  # setup; order + queued event in WP
     [event_retry_after_freescout_down]=3 # pending 1; SPAT's retry scheduled; sent 2
@@ -514,6 +520,53 @@ if ! is_count "$ATTENTION_ORDER" || [ "$ATTENTION_ORDER" -eq 0 ]; then
 fi
 wp_step rerun_registration "$DETAIL"
 run_assertions rerun SPATBRIDGE_E2E_ORDER_ID="$ATTENTION_ORDER"
+
+# --------------------------------------------------------------------
+# 9b. A secondary address: a waitlist entry and a player recorded under
+#     another of the customer's addresses must show on the ticket once the
+#     FreeScout customer carries that address. The sandbox fixtures have no
+#     such records, so they are made here and removed afterwards.
+# --------------------------------------------------------------------
+log "Secondary-address assertion"
+SECONDARY=$(wp_eval '
+    global $wpdb;
+    $email = getenv( "ADDR" );
+    $table = SPLM_Waitlist_Database::table_name();
+    $wpdb->delete( $table, array( "email" => $email ) );
+    foreach ( get_posts( array( "post_type" => "sp_player", "title" => "Sam Secondary", "post_status" => "any", "fields" => "ids", "posts_per_page" => -1 ) ) as $old ) {
+        wp_delete_post( $old, true );
+    }
+    $entry  = SPLM_Waitlist_Database::insert( array( "season" => "W2027", "position" => "player", "name" => "Sam Smith", "email" => $email, "status" => "queued" ) );
+    $player = wp_insert_post( array( "post_type" => "sp_player", "post_title" => "Sam Secondary", "post_status" => "publish" ), true );
+    if ( ! $entry || is_wp_error( $player ) ) {
+        echo "setup failed: " . ( is_wp_error( $player ) ? $player->get_error_message() : $wpdb->last_error );
+        return;
+    }
+    update_post_meta( $player, "spt_email", $email );
+    update_post_meta( $player, "sp_number", 23 );
+    echo $entry . " " . $player;
+' ADDR="$SECONDARY_EMAIL")
+SECONDARY_PLAYER="${SECONDARY#* }"
+DETAIL=""
+if ! is_count "${SECONDARY%% *}" || ! is_count "$SECONDARY_PLAYER"; then
+    DETAIL="creating the waitlist entry and player under ${SECONDARY_EMAIL} printed '${SECONDARY}', expected '<entry id> <player id>'"
+fi
+wp_step secondary_address_lookup "$DETAIL"
+run_assertions secondary_address SPATBRIDGE_E2E_SECONDARY_EMAIL="$SECONDARY_EMAIL" SPATBRIDGE_E2E_SECONDARY_PLAYER_ID="$SECONDARY_PLAYER"
+CLEANED=$(wp_eval '
+    global $wpdb;
+    $email = getenv( "ADDR" );
+    $wpdb->delete( SPLM_Waitlist_Database::table_name(), array( "email" => $email ) );
+    foreach ( get_posts( array( "post_type" => "sp_player", "title" => "Sam Secondary", "post_status" => "any", "fields" => "ids", "posts_per_page" => -1 ) ) as $old ) {
+        wp_delete_post( $old, true );
+    }
+    $left = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM " . SPLM_Waitlist_Database::table_name() . " WHERE email = %s", $email ) )
+        + count( get_posts( array( "post_type" => "sp_player", "title" => "Sam Secondary", "post_status" => "any", "fields" => "ids" ) ) );
+    echo 0 === $left ? "cleaned" : "left " . $left;
+' ADDR="$SECONDARY_EMAIL")
+DETAIL=""
+[ "$CLEANED" = "cleaned" ] || DETAIL="removing the secondary-address records from WordPress: ${CLEANED:-no output}"
+wp_final secondary_address_lookup "$DETAIL"
 
 # --------------------------------------------------------------------
 # 10. Events from WordPress: the real hooks queue them in SPAT's outbox and

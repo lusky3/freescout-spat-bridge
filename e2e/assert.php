@@ -15,6 +15,10 @@
  *            the waitlist panel and its actions
  *   change_email_refusals, change_email_run, rerun
  *            the Player card actions
+ *   secondary_address
+ *            a waitlist entry and a player under another of the customer's
+ *            addresses (run-e2e.sh creates them in WordPress and removes
+ *            them afterwards)
  *   events_received, events_create_setup, events_created, events_retried
  *            events WordPress sent (run-e2e.sh fires them and runs WP-Cron)
  *
@@ -27,7 +31,9 @@
  * SPATBRIDGE_E2E_FIXTURES holds the JSON line the WordPress fixture script
  * printed (e-Transfer log ids, the on-hold order id, waitlist entry ids, the
  * change-email player). The event phases also get SPATBRIDGE_E2E_EVENT_ID,
- * SPATBRIDGE_E2E_EVENT_REF and SPATBRIDGE_E2E_ORDER_ID from run-e2e.sh.
+ * SPATBRIDGE_E2E_EVENT_REF and SPATBRIDGE_E2E_ORDER_ID from run-e2e.sh, and
+ * the secondary-address phase SPATBRIDGE_E2E_SECONDARY_EMAIL and
+ * SPATBRIDGE_E2E_SECONDARY_PLAYER_ID.
  *
  * The action checks call ActionController's preview() and run() as a given
  * FreeScout user, preview first and then run with the preview's idempotency
@@ -40,6 +46,7 @@ use Modules\SpatBridge\Services\ActionPermissions;
 use Modules\SpatBridge\Services\ConnectionMessage;
 use Modules\SpatBridge\Services\Signer;
 use Modules\SpatBridge\Services\SpatClient;
+use Modules\SpatBridge\Services\Support\CustomerEmails;
 use Modules\SpatBridge\Services\Support\OptionStoreInterface;
 
 $spatbridgeE2e = new class {
@@ -108,6 +115,11 @@ $spatbridgeE2e = new class {
             'rerun' => function () {
                 $this->check('rerun_registration', function () {
                     return $this->rerunRegistration();
+                });
+            },
+            'secondary_address' => function () {
+                $this->step('secondary_address_lookup', function () {
+                    return $this->secondaryAddress();
                 });
             },
             'events_received' => function () {
@@ -391,7 +403,7 @@ $spatbridgeE2e = new class {
 
     private function actionMatchRuns(): string
     {
-        list($mailbox, , $conversation) = $this->fixtures(true);
+        list($mailbox, $fixtureCustomer, $conversation) = $this->fixtures(true);
         $admin = $this->agent(self::ADMIN_EMAIL, $mailbox);
         $logId = $this->fixtureId('etransfer_log_id');
         $orderId = $this->fixtureId('on_hold_order_id');
@@ -425,7 +437,7 @@ $spatbridgeE2e = new class {
             return 'expected one new note containing "' . self::NOTE_MARK . '", found ' . ($this->noteCount($conversation) - $notesBefore);
         }
 
-        $customer = app(SpatClient::class)->customer(self::CUSTOMER_EMAIL);
+        $customer = app(SpatClient::class)->customer(CustomerEmails::of($fixtureCustomer, $conversation));
         if (!$customer->ok()) {
             return 'customer() failed after the run: ' . $customer->errorCode();
         }
@@ -725,6 +737,95 @@ $spatbridgeE2e = new class {
         $message = (string) ($done['body']['msg'] ?? '');
         if (strpos($message, 'Still not registered: name rejected') === false) {
             return 'the run says "' . $message . '", expected "Still not registered: name rejected"';
+        }
+
+        return '';
+    }
+
+    // ------------------------------------------------------------------
+    // A secondary address
+    // ------------------------------------------------------------------
+
+    /**
+     * run-e2e.sh has put a waitlist entry (Sam Smith, W2027 player) and a
+     * player (Sam Secondary) in WordPress under an address that is not the
+     * fixture customer's main one. Once the FreeScout customer carries that
+     * address too, both show on the ticket, and Change email on the player
+     * passes the guard with that address. The address is removed from the
+     * customer again whatever happens.
+     */
+    private function secondaryAddress(): string
+    {
+        $secondary = strtolower($this->env('SPATBRIDGE_E2E_SECONDARY_EMAIL'));
+        $playerId = $this->envId('SPATBRIDGE_E2E_SECONDARY_PLAYER_ID');
+        list($mailbox, $customer, $conversation) = $this->fixtures(true);
+
+        try {
+            if (!\App\Email::where('email', $secondary)->exists()) {
+                $customer->addEmail($secondary);
+            }
+            $customer = \App\Customer::find($customer->id);
+            $emails = CustomerEmails::of($customer, $conversation);
+            if ($emails !== [self::WP_CUSTOMER_EMAIL, $secondary]) {
+                return 'the customer is looked up by ' . json_encode($emails) . ', expected the main and the secondary address';
+            }
+
+            // The contract: WordPress echoes the list and finds both records.
+            $result = app(SpatClient::class)->customer($emails);
+            if (!$result->ok()) {
+                return 'customer() failed: ' . $result->errorCode() . ' ' . ConnectionMessage::describe($result);
+            }
+            $data = $result->data();
+            if (($data['emails'] ?? null) !== $emails) {
+                return 'WordPress echoed emails ' . json_encode($data['emails'] ?? null) . ', expected ' . json_encode($emails);
+            }
+            if (!in_array($playerId, array_map('intval', (array) ($data['player_ids'] ?? [])), true)) {
+                return 'player #' . $playerId . ' is not in player_ids ' . json_encode($data['player_ids'] ?? null);
+            }
+            $found = null;
+            foreach ((array) ($data['sections']['player']['players'] ?? []) as $player) {
+                if ((int) ($player['id'] ?? 0) === $playerId) {
+                    $found = $player;
+                }
+            }
+            if (($found['email'] ?? null) !== $secondary) {
+                return 'player #' . $playerId . ' was found under ' . json_encode($found['email'] ?? null) . ', expected ' . $secondary;
+            }
+            $entry = null;
+            foreach ((array) ($data['sections']['waitlist']['entries'] ?? []) as $candidate) {
+                if (($candidate['season'] ?? '') === 'W2027') {
+                    $entry = $candidate;
+                }
+            }
+            if (($entry['email'] ?? null) !== $secondary || ($entry['name'] ?? null) !== 'Sam Smith') {
+                return 'the W2027 waitlist entry is ' . json_encode($entry) . ', expected Sam Smith under ' . $secondary;
+            }
+
+            // The sidebar: both records, the registrant line, and Change
+            // email with the address the player was found under.
+            $html = $this->fixtureSidebar();
+            $waitlist = $this->row($html, 'W2027 · Player');
+            if ($waitlist === null || strpos($waitlist['text'], 'Sam Smith · ' . $secondary) === false) {
+                return 'no W2027 waitlist row naming "Sam Smith · ' . $secondary . '": ' . ($waitlist['text'] ?? $this->text($html));
+            }
+            $player = $this->row($html, '#23 Sam Secondary');
+            if ($player === null) {
+                return 'no "#23 Sam Secondary" player row: ' . $this->text($html);
+            }
+            $params = rawurlencode((string) json_encode(['old_email' => $secondary]));
+            if (strpos($player['html'], 'params=' . $params) === false) {
+                return 'the Sam Secondary row has no Change email for ' . $secondary . ': ' . $player['text'];
+            }
+
+            // The guard accepts the secondary address: the form, not a refusal.
+            $admin = $this->agent(self::ADMIN_EMAIL, $mailbox);
+            $form = $this->previewAction($admin, $conversation, 'player', 'change_email', ['old_email' => $secondary]);
+            if (strpos($form, 'spatbridge-email-form') === false || strpos($this->plain($form), $secondary) === false) {
+                return 'Change email for ' . $secondary . ' did not open the form: ' . $this->text($form);
+            }
+        } finally {
+            \App\Email::where('email', $secondary)->delete();
+            $this->forgetCachedCustomer();
         }
 
         return '';
@@ -1047,7 +1148,9 @@ $spatbridgeE2e = new class {
         if (!$customer) {
             $customer = \App\Customer::create(self::CUSTOMER_EMAIL, ['first_name' => 'Jordan', 'last_name' => 'Smith']);
         }
-        \App\Email::where('customer_id', $customer->id)->update(['email' => self::CUSTOMER_EMAIL]);
+        \App\Email::where('customer_id', $customer->id)
+            ->whereRaw('LOWER(email) = ?', [strtolower(self::CUSTOMER_EMAIL)])
+            ->update(['email' => self::CUSTOMER_EMAIL]);
         $customer = \App\Customer::find($customer->id);
 
         return [$mailbox, $customer, $this->conversationFor($mailbox, $customer, self::CUSTOMER_EMAIL, 'Which team am I on?')];
@@ -1114,11 +1217,11 @@ $spatbridgeE2e = new class {
     }
 
     /**
-     * The first sidebar row whose title is $title: its badge and its plain
-     * text (title, badge, detail lines, action labels). Null when there is
-     * no such row.
+     * The first sidebar row whose title is $title: its badge, its plain
+     * text (title, badge, detail lines, action labels) and its markup. Null
+     * when there is no such row.
      *
-     * @return array{badge: string, text: string}|null
+     * @return array{badge: string, text: string, html: string}|null
      */
     private function row(string $html, string $title): ?array
     {
@@ -1130,7 +1233,7 @@ $spatbridgeE2e = new class {
             }
             $badge = preg_match('#<span class="pull-right[^"]*">(.*?)</span>#s', $block, $m) ? $this->plain($m[1]) : '';
 
-            return ['badge' => $badge, 'text' => $text];
+            return ['badge' => $badge, 'text' => $text, 'html' => $block];
         }
 
         return null;
@@ -1312,9 +1415,16 @@ $spatbridgeE2e = new class {
         return $id;
     }
 
+    /**
+     * Drops the sidebar's cached lookup for the fixture customer, under the
+     * key the sidebar uses for the customer's current addresses.
+     */
     private function forgetCachedCustomer(): void
     {
-        \Cache::forget('spatbridge.customer.' . md5(strtolower(self::CUSTOMER_EMAIL)));
+        list(, $customer, $conversation) = $this->fixtures(false);
+        if ($customer !== null) {
+            \Cache::forget(CustomerEmails::cacheKey(CustomerEmails::of($customer, $conversation)));
+        }
     }
 
     /**

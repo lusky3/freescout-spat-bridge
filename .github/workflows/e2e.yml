@@ -1,7 +1,7 @@
 name: E2E
 
 # Brings up a real WordPress (sportspress-sandbox + the SPAT plugins) and a
-# real FreeScout running this module, then runs e2e/run-e2e.sh's 21 checks
+# real FreeScout running this module, then runs e2e/run-e2e.sh's 22 checks
 # through tinker and wp-cli: connection test and sidebar panels, the action
 # preview/run flow (e-Transfer match, waitlist offers, change email, re-run
 # registration), and signed WordPress events (notes, ticket creation without
