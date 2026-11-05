@@ -35,7 +35,7 @@ class FeatureRegistryTest extends TestCase
                 return [];
             }
 
-            public function present(array $sections): ?Panel
+            public function present(array $sections, array $emails = []): ?Panel
             {
                 return null;
             }

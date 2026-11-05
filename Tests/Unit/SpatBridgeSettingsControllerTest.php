@@ -80,7 +80,7 @@ class SpatBridgeSettingsControllerTest extends TestCase
                 return ['player'];
             }
 
-            public function present(array $sections): ?Panel
+            public function present(array $sections, array $emails = []): ?Panel
             {
                 return null;
             }

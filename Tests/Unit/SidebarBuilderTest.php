@@ -21,6 +21,8 @@ class SidebarBuilderTest extends TestCase
             private $key;
             private $panel;
             private $providerKeys;
+            /** @var array<int, array{0: array, 1: string[]}> */
+            public $presented = [];
 
             public function __construct(string $key, $panel, array $providerKeys)
             {
@@ -44,8 +46,9 @@ class SidebarBuilderTest extends TestCase
                 return $this->providerKeys;
             }
 
-            public function present(array $sections): ?Panel
+            public function present(array $sections, array $emails = []): ?Panel
             {
+                $this->presented[] = [$sections, $emails];
                 if ($this->panel instanceof \Throwable) {
                     throw $this->panel;
                 }
@@ -99,6 +102,24 @@ class SidebarBuilderTest extends TestCase
 
         $this->assertSame('unavailable', $vm['state']);
         $this->assertSame([], $vm['panels']);
+    }
+
+    public function test_features_get_the_sections_and_the_addresses_wordpress_looked_up(): void
+    {
+        $feature = $this->feature('a', null);
+        $result = ClientResult::success(200, [
+            'emails' => ['main@example.com', 7, 'other@example.com'],
+            'player_ids' => [1],
+            'sections' => ['waitlist' => ['entries' => []]],
+        ], 5);
+
+        (new SidebarBuilder($this->logger()))->build($result, [$feature]);
+        (new SidebarBuilder($this->logger()))->build($this->ok(), [$feature]);
+
+        $this->assertSame([
+            [['waitlist' => ['entries' => []]], ['main@example.com', 'other@example.com']],
+            [[], []],
+        ], $feature->presented);
     }
 
     public function test_all_features_return_null_is_empty(): void

@@ -13,8 +13,9 @@ use Modules\SpatBridge\Features\PlayerCard\PlayerCardFeature;
 use Modules\SpatBridge\Http\Controllers\ActionController;
 use Modules\SpatBridge\Services\ClientResult;
 use Modules\SpatBridge\Services\NoteWriter;
+use Modules\SpatBridge\Services\Support\CustomerEmails;
 use PHPUnit\Framework\TestCase;
-use Psr\Log\NullLogger;
+use Psr\Log\AbstractLogger;
 use Tests\Support\FakeCache;
 use Tests\Support\FakeCustomer;
 use Tests\Support\FakeOptionStore;
@@ -33,6 +34,8 @@ class ActionControllerTest extends TestCase
     private $conversation;
     /** @var object In another mailbox, with another id. */
     private $otherConversation;
+    /** @var AbstractLogger&object{records: array} */
+    private $logger;
     /** @var string The key the run requests post; previewed() sets it. */
     private $previewKey = self::KEY;
 
@@ -40,6 +43,14 @@ class ActionControllerTest extends TestCase
     {
         FakeCache::reset();
         Thread::reset();
+        $this->logger = new class extends AbstractLogger {
+            public $records = [];
+
+            public function log($level, $message, array $context = [])
+            {
+                $this->records[] = [$level, (string) $message];
+            }
+        };
         $this->client = new FakeSpatClient();
         $this->options = new FakeOptionStore();
 
@@ -80,7 +91,7 @@ class ActionControllerTest extends TestCase
                 return ['etransfers'];
             }
 
-            public function present(array $sections): ?Panel
+            public function present(array $sections, array $emails = []): ?Panel
             {
                 return null;
             }
@@ -124,16 +135,27 @@ class ActionControllerTest extends TestCase
             $registry,
             $this->options,
             new NoteWriter(),
-            new NullLogger()
+            $this->logger
         ) extends ActionController {
             /** @var array<int, object> */
             public $conversations = [];
             /** @var array<int, array{0: string, 1: array, 2: int}> */
             public $rendered = [];
+            /** @var string[]|\Throwable The customer_email of each of the customer's tickets. */
+            public $ticketAddresses = [];
 
             protected function findConversation(int $id)
             {
                 return $this->conversations[$id] ?? null;
+            }
+
+            protected function customerTicketAddresses($conversation): array
+            {
+                if ($this->ticketAddresses instanceof \Throwable) {
+                    throw $this->ticketAddresses;
+                }
+
+                return $this->ticketAddresses;
             }
 
             protected function renderView(string $view, array $data, int $status)
@@ -263,9 +285,12 @@ class ActionControllerTest extends TestCase
         return json_decode($response->getContent(), true);
     }
 
+    /**
+     * The key the sidebar caches this ticket's customer under.
+     */
     private function cacheKey(): string
     {
-        return 'spatbridge.customer.' . md5(strtolower(self::CUSTOMER_EMAIL));
+        return CustomerEmails::cacheKey(CustomerEmails::of($this->conversation->customer, $this->conversation));
     }
 
     // ---- param guard -----------------------------------------------------
@@ -313,7 +338,7 @@ class ActionControllerTest extends TestCase
                 return $this->inner->providerKeys();
             }
 
-            public function present(array $sections): ?Panel
+            public function present(array $sections, array $emails = []): ?Panel
             {
                 return null;
             }
@@ -394,7 +419,112 @@ class ActionControllerTest extends TestCase
         $this->assertSame([], $feature->seen);
 
         $controller->preview($this->previewRequest($this->user(), ['params' => '{"who":"x"}']));
-        $this->assertSame([['match', [self::CUSTOMER_EMAIL]]], $feature->seen);
+        $this->assertSame([['match', [strtolower(self::CUSTOMER_EMAIL)]]], $feature->seen);
+    }
+
+    public function test_the_guard_gets_every_address_the_sidebar_looks_up(): void
+    {
+        $this->conversation->customer = new FakeCustomer(
+            self::CUSTOMER_EMAIL,
+            [self::CUSTOMER_EMAIL, 'Second@Example.com']
+        );
+        $this->conversation->customer_email = 'thread@example.com';
+        $feature = $this->guardedFeature();
+        $controller = $this->controller(null, $feature);
+
+        $controller->preview($this->previewRequest($this->user(), ['params' => '{"who":"x"}']));
+
+        $expected = ['jordan.smith@example.com', 'thread@example.com', 'second@example.com'];
+        $this->assertSame([['match', $expected]], $feature->seen);
+        $this->assertSame(
+            $expected,
+            CustomerEmails::of($this->conversation->customer, $this->conversation)
+        );
+    }
+
+    public function test_change_email_accepts_each_of_the_customers_addresses_and_nothing_else(): void
+    {
+        $this->conversation->customer = new FakeCustomer(
+            self::CUSTOMER_EMAIL,
+            [self::CUSTOMER_EMAIL, 'second@example.com']
+        );
+        $this->conversation->customer_email = 'thread@example.com';
+        $controller = $this->controller(null, new PlayerCardFeature());
+
+        foreach (['jordan.smith@example.com', 'SECOND@example.com', 'thread@example.com'] as $i => $old) {
+            $params = json_encode(['old_email' => $old]);
+            $controller->preview($this->previewRequest($this->user(), [
+                'feature' => 'player', 'action' => 'change_email', 'params' => $params,
+            ]));
+            $this->assertSame('spatbridge::action.change_email_form', $controller->rendered[$i][0], $old);
+        }
+
+        $controller->preview($this->previewRequest($this->user(), [
+            'feature' => 'player', 'action' => 'change_email', 'params' => '{"old_email":"someone@example.com"}',
+        ]));
+        $this->assertSame('spatbridge::action.error', $controller->rendered[3][0]);
+        $this->assertSame([], $this->client->calls);
+    }
+
+    public function test_run_also_forgets_the_entries_of_the_customers_other_tickets(): void
+    {
+        $this->conversation->customer = new FakeCustomer(
+            self::CUSTOMER_EMAIL,
+            [self::CUSTOMER_EMAIL, 'second@example.com']
+        );
+        $this->client->results[] = $this->realRun();
+        $controller = $this->controller();
+        $controller->ticketAddresses = [self::CUSTOMER_EMAIL, 'Other-Thread@Example.com', null, ''];
+        $this->previewed($controller);
+        $other = clone $this->conversation;
+        $other->customer_email = 'Other-Thread@Example.com';
+        $otherKey = CustomerEmails::cacheKey(CustomerEmails::ofConversation($other));
+        FakeCache::$store[$otherKey] = ['sections' => []];
+        FakeCache::$store['spatbridge.customer.unrelated'] = ['sections' => []];
+
+        $controller->run($this->runRequest($this->user()));
+
+        $this->assertArrayNotHasKey($otherKey, FakeCache::$store);
+        $this->assertArrayHasKey('spatbridge.customer.unrelated', FakeCache::$store);
+    }
+
+    public function test_a_failure_clearing_the_cache_does_not_fail_an_action_that_ran(): void
+    {
+        $this->client->results[] = $this->realRun();
+        $controller = $this->controller();
+        $controller->ticketAddresses = new \RuntimeException('SQLSTATE[HY000] gone away');
+        $this->previewed($controller);
+        FakeCache::$store[$this->cacheKey()] = ['sections' => []];
+
+        $response = $controller->run($this->runRequest($this->user()));
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('success', $this->json($response)['status']);
+        $this->assertCount(1, Thread::$created);
+        // The ticket's own entry goes before the lookup of the other tickets.
+        $this->assertArrayNotHasKey($this->cacheKey(), FakeCache::$store);
+        $this->assertCount(1, $this->logger->records);
+        [$level, $message] = $this->logger->records[0];
+        $this->assertSame('warning', $level);
+        $this->assertStringContainsString('RuntimeException', $message);
+        $this->assertStringContainsString('gone away', $message);
+        $this->assertStringNotContainsString(strtolower(self::CUSTOMER_EMAIL), strtolower($message));
+    }
+
+    public function test_run_forgets_the_cache_entry_the_sidebar_stored_for_every_address(): void
+    {
+        $this->conversation->customer = new FakeCustomer(
+            self::CUSTOMER_EMAIL,
+            [self::CUSTOMER_EMAIL, 'second@example.com']
+        );
+        $this->client->results[] = $this->realRun();
+        $controller = $this->controller();
+        $this->previewed($controller);
+        FakeCache::$store[$this->cacheKey()] = ['sections' => []];
+
+        $controller->run($this->runRequest($this->user()));
+
+        $this->assertArrayNotHasKey($this->cacheKey(), FakeCache::$store);
     }
 
     // ---- preview ---------------------------------------------------------

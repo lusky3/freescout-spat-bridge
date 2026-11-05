@@ -59,26 +59,30 @@ final class WaitlistFeature implements Feature
         return [];
     }
 
-    public function present(array $sections): ?Panel
+    public function present(array $sections, array $emails = []): ?Panel
     {
         $section = $this->arr($sections, 'waitlist');
+        $entries = array_values(array_filter($this->arr($section, 'entries'), 'is_array'));
+        $primary = isset($emails[0]) && is_string($emails[0]) ? strtolower(trim($emails[0])) : '';
+        $showRegistrant = $this->registrantsDiffer($entries, $primary);
 
         $rows = [];
         $offered = null;
         $queued = null;
+        $lapsed = null;
         $expired = false;
-        foreach ($this->arr($section, 'entries') as $entry) {
-            if (!is_array($entry)) {
-                continue;
-            }
+        foreach ($entries as $entry) {
             $status = $this->str($entry, 'status');
             if ($status === 'offered' && $offered === null) {
                 $offered = $entry;
             }
-            if ($status !== 'offered' && $status !== 'claimed' && $queued === null) {
+            if ($status === 'expired' && $lapsed === null) {
+                $lapsed = $entry;
+            }
+            if ($status !== 'offered' && $status !== 'claimed' && $status !== 'expired' && $queued === null) {
                 $queued = $entry;
             }
-            $row = $this->row($entry, $status);
+            $row = $this->row($entry, $status, $showRegistrant ? $this->registrantLine($entry, $primary) : '');
             $expired = $expired || $row->tone() === 'bad';
             $rows[] = $row;
         }
@@ -87,7 +91,13 @@ final class WaitlistFeature implements Feature
             return null;
         }
 
-        return new Panel($this->key(), $this->label(), $rows, $this->summary($offered, $queued), $expired);
+        return new Panel(
+            $this->key(),
+            $this->label(),
+            $rows,
+            $this->summary($offered, $queued, $lapsed),
+            $expired
+        );
     }
 
     public function previewOverride(string $action, array $params): ?array
@@ -104,7 +114,66 @@ final class WaitlistFeature implements Feature
         return $params;
     }
 
-    private function summary(?array $offered, ?array $queued): ?string
+    /**
+     * One customer's addresses can hold entries for different people, or
+     * an entry under an address other than the one the agent sees first.
+     * Only then do rows name who and which address; a single registrant
+     * under the primary address looks as it always did.
+     *
+     * @param array[] $entries
+     */
+    private function registrantsDiffer(array $entries, string $primary): bool
+    {
+        $names = [];
+        $addresses = [];
+        foreach ($entries as $entry) {
+            $name = strtolower($this->name($entry));
+            if ($name !== '') {
+                $names[$name] = true;
+            }
+            $address = $this->address($entry);
+            if ($address !== '') {
+                $addresses[$address] = true;
+            }
+        }
+
+        if (count($names) > 1 || count($addresses) > 1) {
+            return true;
+        }
+
+        return $primary !== '' && $addresses !== [] && !isset($addresses[$primary]);
+    }
+
+    /**
+     * The registrant's name, and the address when it isn't the primary one
+     * (or when the primary one isn't known).
+     */
+    private function registrantLine(array $entry, string $primary): string
+    {
+        $address = $this->address($entry);
+
+        return $this->join([
+            $this->name($entry),
+            $address !== $primary ? $address : '',
+        ], self::SEP);
+    }
+
+    private function name(array $entry): string
+    {
+        return isset($entry['name']) && is_string($entry['name']) ? trim($entry['name']) : '';
+    }
+
+    /**
+     * Lower-cased, and only when it looks like an address.
+     */
+    private function address(array $entry): string
+    {
+        $email = isset($entry['email']) && is_string($entry['email']) ? strtolower(trim($entry['email'])) : '';
+
+        return strpos($email, '@') === false ? '' : $email;
+    }
+
+    private function summary(?array $offered, ?array $queued, ?array $lapsed): ?string
     {
         if ($offered !== null) {
             $what = $this->join([
@@ -122,10 +191,18 @@ final class WaitlistFeature implements Feature
             return sprintf(__('On the %s waitlist'), $this->str($queued, 'season'));
         }
 
+        // Only a lapsed offer left: it isn't a place on the waitlist.
+        if ($lapsed !== null && $this->str($lapsed, 'season') !== '') {
+            return sprintf(__('%s offer expired'), $this->join([
+                $this->str($lapsed, 'season'),
+                $this->position($this->str($lapsed, 'position')),
+            ], ' '));
+        }
+
         return null;
     }
 
-    private function row(array $entry, string $status): PanelRow
+    private function row(array $entry, string $status, string $registrant): PanelRow
     {
         $title = $this->join([
             $this->str($entry, 'season'),
@@ -160,6 +237,9 @@ final class WaitlistFeature implements Feature
         }
 
         $lines = [];
+        if ($registrant !== '') {
+            $lines[] = $registrant;
+        }
         if ($live !== '') {
             $lines[] = $live;
         } else {

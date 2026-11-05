@@ -15,6 +15,7 @@ use Modules\SpatBridge\Services\ConnectionMessage;
 use Modules\SpatBridge\Services\MailboxScope;
 use Modules\SpatBridge\Services\NoteWriter;
 use Modules\SpatBridge\Services\SpatClient;
+use Modules\SpatBridge\Services\Support\CustomerEmails;
 use Modules\SpatBridge\Services\Support\OptionStoreInterface;
 use Psr\Log\LoggerInterface;
 
@@ -234,7 +235,7 @@ class ActionController extends Controller
         }
 
         if ($isAction && $feature instanceof GuardsActionParams) {
-            $refusal = $feature->guardParams($name, $params, $this->customerEmails($conversation));
+            $refusal = $feature->guardParams($name, $params, CustomerEmails::ofConversation($conversation));
             if ($refusal !== null) {
                 return ['error' => [403, $refusal]];
             }
@@ -360,34 +361,36 @@ class ActionController extends Controller
     }
 
     /**
-     * The sidebar caches WordPress data per customer email for a minute;
-     * after an action it must show the new state at once.
+     * The sidebar caches WordPress data per customer address list for a
+     * minute; after an action it must show the new state at once. The list
+     * includes the ticket's own customer address, so the customer's other
+     * tickets may be cached under other keys; those are cleared too.
+     *
+     * The action has already run, so a cache or database error here is
+     * logged and never turns the answer into a failure. The log line holds
+     * the error only, not the customer's addresses.
      *
      * @param object $conversation
      */
     private function forgetCustomerCache($conversation): void
     {
-        foreach ($this->customerEmails($conversation) as $email) {
-            \Cache::forget('spatbridge.customer.' . md5(strtolower($email)));
+        try {
+            $customer = $conversation->customer ?? null;
+            $own = CustomerEmails::cacheKey(CustomerEmails::of($customer, $conversation));
+            \Cache::forget($own);
+            foreach ($this->customerTicketAddresses($conversation) as $address) {
+                if (is_string($address) && trim($address) !== '') {
+                    $ticket = (object) ['customer_email' => $address];
+                    $key = CustomerEmails::cacheKey(CustomerEmails::of($customer, $ticket));
+                    if ($key !== $own) {
+                        \Cache::forget($key);
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            $this->logger->warning('[SpatBridge] clearing the sidebar cache after an action failed: '
+                . get_class($e) . ' (' . $e->getCode() . '): ' . $e->getMessage());
         }
-    }
-
-    /**
-     * The addresses the sidebar looks the customer up by.
-     *
-     * @param object $conversation
-     * @return string[]
-     */
-    private function customerEmails($conversation): array
-    {
-        $emails = [];
-        $customer = $conversation->customer ?? null;
-        if (is_object($customer) && method_exists($customer, 'getMainEmail')) {
-            $emails[] = trim((string) $customer->getMainEmail());
-        }
-        $emails[] = trim((string) ($conversation->customer_email ?? ''));
-
-        return array_values(array_unique(array_filter($emails, 'strlen')));
     }
 
     private function paramsJson(array $params): string
@@ -457,6 +460,22 @@ class ActionController extends Controller
     protected function findConversation(int $id)
     {
         return $id > 0 ? \App\Conversation::find($id) : null;
+    }
+
+    /**
+     * The distinct customer_email of every ticket of this conversation's
+     * customer.
+     *
+     * @param object $conversation
+     * @return array<int, string|null>
+     */
+    protected function customerTicketAddresses($conversation): array
+    {
+        $customerId = (int) ($conversation->customer_id ?? 0);
+
+        return $customerId > 0
+            ? \App\Conversation::where('customer_id', $customerId)->distinct()->pluck('customer_email')->all()
+            : [];
     }
 
     /**

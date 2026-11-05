@@ -6,10 +6,19 @@ use GuzzleHttp\ClientInterface;
 use GuzzleHttp\Exception\ConnectException;
 use Modules\SpatBridge\Services\Support\OptionStoreInterface;
 use Psr\Log\LoggerInterface;
+use Psr\Log\LogLevel;
 
 /**
  * Signed HTTP client for the SPAT WordPress plugin suite. Never throws:
  * every failure comes back as a ClientResult with an error code.
+ *
+ * Failures are logged at error, because FreeScout's default APP_LOG_LEVEL
+ * (error) drops warnings: a wrong secret, a skewed clock, an outage or an
+ * outdated SPAT would otherwise leave nothing in the log to explain why
+ * the sidebar said "League info unavailable". Only answers WordPress gives
+ * on purpose (rate limiting, and an action it refused with a reason) stay
+ * at warning. The module's own missing URL or secret is not logged: the
+ * settings page shows it, and every page view would repeat it.
  */
 class SpatClient
 {
@@ -20,6 +29,14 @@ class SpatClient
     private const TIMEOUT = 3;
     private const ACTION_TIMEOUT = 15;
     private const CONNECT_TIMEOUT = 2;
+    /** Error codes that are WordPress answering as designed, not a fault. */
+    private const EXPECTED_ERRORS = [
+        'rate_limited',
+        'actor_unknown',
+        'actor_forbidden',
+        'unknown_action',
+        'action_error',
+    ];
 
     /** @var ClientInterface */
     private $http;
@@ -47,9 +64,27 @@ class SpatClient
         return $this->post(self::PATH_PING, '{}');
     }
 
-    public function customer(string $email): ClientResult
+    /**
+     * Everything WordPress has for a customer, looked up by every address
+     * in the list (CustomerEmails::of(): normalized, primary first, at most
+     * CustomerEmails::MAX). WordPress refuses an empty or longer list.
+     *
+     * @param string[] $emails
+     */
+    public function customer(array $emails): ClientResult
     {
-        return $this->post(self::PATH_CUSTOMER, (string) json_encode(['email' => $email]));
+        $result = $this->post(self::PATH_CUSTOMER, $this->encode(['emails' => array_values($emails)]));
+
+        $data = $result->ok() ? $result->data() : null;
+        $ignored = is_array($data) && isset($data['ignored']) && is_array($data['ignored']) ? $data['ignored'] : [];
+        if ($ignored !== []) {
+            // WordPress skips a later address it finds invalid and looks up
+            // the rest; worth a trace, not a failure.
+            $this->logger->info('[SpatBridge] WordPress skipped customer address(es) at index '
+                . implode(', ', array_map('strval', array_filter($ignored, 'is_scalar'))) . ' as invalid');
+        }
+
+        return $result;
     }
 
     /**
@@ -134,9 +169,7 @@ class SpatClient
             $decoded = json_decode((string) $response->getBody(), true);
         } catch (\Throwable $e) {
             $code = $this->isTimeout($e) ? 'timeout' : 'network';
-            $this->logger->warning(
-                '[SpatBridge] request to ' . $path . ' failed: ' . $code . ' (' . $e->getMessage() . ')'
-            );
+            $this->logFailure($code, 'request to ' . $path . ' failed: ' . $code . ' (' . $e->getMessage() . ')');
             return ClientResult::failure($code, 0, $this->elapsedMs($started));
         }
 
@@ -144,32 +177,37 @@ class SpatClient
 
         if ($status === 200) {
             if (!is_array($decoded)) {
-                $this->logger->warning('[SpatBridge] non-JSON 200 from ' . $path);
+                $this->logFailure('bad_response', 'non-JSON 200 from ' . $path . ': bad_response');
                 return ClientResult::failure('bad_response', $status, $latency);
             }
             return ClientResult::success($status, $decoded, $latency);
         }
 
         if ($status >= 300 && $status < 400) {
-            $this->logger->warning('[SpatBridge] ' . $path . ' redirected (HTTP ' . $status . ') to ' . $location);
+            $this->logFailure('redirected', $path . ' redirected (HTTP ' . $status . ') to ' . $location);
             return ClientResult::failure('redirected', $status, $latency, $this->siteUrlFrom($location, $path));
         }
 
         $wpCode = is_array($decoded) && isset($decoded['code']) && is_string($decoded['code']) ? $decoded['code'] : '';
-        $this->logger->warning('[SpatBridge] ' . $path . ' returned HTTP ' . $status . ' ' . $wpCode);
-
         $code = $this->mapError($status, $wpCode);
+        $message = '';
         if ($actionErrors && $code === 'http_error') {
             $message = is_array($decoded) && isset($decoded['message']) && is_string($decoded['message'])
                 ? trim($decoded['message'])
                 : '';
             $code = $this->mapActionError($wpCode, $message);
-            if ($code !== 'http_error') {
-                return ClientResult::failure($code, $status, $latency, $message);
-            }
         }
+        $this->logFailure($code, $path . ' returned HTTP ' . $status . ' ' . $wpCode . ': ' . $code);
 
-        return ClientResult::failure($code, $status, $latency);
+        return $code === 'http_error'
+            ? ClientResult::failure($code, $status, $latency)
+            : ClientResult::failure($code, $status, $latency, $message);
+    }
+
+    private function logFailure(string $code, string $message): void
+    {
+        $level = in_array($code, self::EXPECTED_ERRORS, true) ? LogLevel::WARNING : LogLevel::ERROR;
+        $this->logger->log($level, '[SpatBridge] ' . $message);
     }
 
     /**

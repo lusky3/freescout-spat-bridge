@@ -47,13 +47,16 @@ final class SidebarBuilder
         $missing = is_array($data) && isset($data['missing']) && is_array($data['missing'])
             ? $data['missing']
             : [];
+        $emails = is_array($data) && isset($data['emails']) && is_array($data['emails'])
+            ? array_values(array_filter($data['emails'], 'is_string'))
+            : [];
 
         $panels = [];
         foreach ($features as $feature) {
             try {
                 $panel = $this->withMissingRows(
                     $feature,
-                    $this->withPermittedActions($feature, $feature->present($sections), $user),
+                    $this->withPermittedActions($feature, $feature->present($sections, $emails), $user),
                     $missing
                 );
             } catch (\Throwable $e) {

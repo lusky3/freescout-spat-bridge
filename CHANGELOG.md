@@ -9,11 +9,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The sidebar looks the customer up in WordPress by every address FreeScout
+  has for them: the main email, the conversation's customer address and the
+  customer's other emails (trimmed, lower-cased, de-duplicated, at most 5).
+  Requires SPAT with the list-based customer lookup
+  (SportsPress-Admin-Tools #243); an older SPAT refuses the request.
+- Change email… is offered on each player row WordPress found under one of
+  the customer's addresses, for that address, and accepts any of the
+  customer's addresses. A player WordPress reports without an address gets
+  none, since the primary address may hold other people's records. The note after a change asks to add the
+  new address to the customer in FreeScout.
+- Waitlist rows name the registrant, and the address when it isn't the
+  primary one, when a customer's entries belong to more than one person or
+  address. A single registrant under the primary address looks as before.
+- WordPress failures (bad signature, clock skew, not configured in
+  WordPress, outdated SPAT, refused requests, outages and timeouts) are
+  logged at `error`, which FreeScout's default log level keeps. Rate
+  limiting and actions WordPress refused with a reason stay at `warning`.
+  The module's own missing URL or secret is still not logged; the settings
+  page shows it.
 - README: Update Now no longer claims to do the whole manual upgrade (it
   installs over the existing folder and keeps files a release dropped), the
   boot-wait tip warns that "Initialization Complete" in the container log can
   be the previous boot's, the install step links the release zip, and the
   verification note covers the published 1.0.0 asset.
+
+### Fixed
+
+- Players, waitlist entries and e-Transfers recorded under a customer's
+  secondary address now show on the ticket.
+- A customer whose only waitlist entry is a lapsed offer gets the summary
+  "S2026 Goalie offer expired" instead of "On the S2026 waitlist".
+- The offer and change-email forms' validation messages are translatable.
 
 ## [1.0.0] - 2026-11-01
 

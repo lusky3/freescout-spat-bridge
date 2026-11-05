@@ -57,7 +57,7 @@ final class ETransfersFeature implements Feature
         return ['search', 'order'];
     }
 
-    public function present(array $sections): ?Panel
+    public function present(array $sections, array $emails = []): ?Panel
     {
         $section = $this->arr($sections, 'etransfers');
 

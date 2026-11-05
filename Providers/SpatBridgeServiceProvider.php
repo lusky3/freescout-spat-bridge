@@ -21,6 +21,7 @@ use Modules\SpatBridge\Services\SidebarBuilder;
 use Modules\SpatBridge\Services\SpatClient;
 use Modules\SpatBridge\Services\TagService;
 use Modules\SpatBridge\Services\TicketCreator;
+use Modules\SpatBridge\Services\Support\CustomerEmails;
 use Modules\SpatBridge\Services\Support\LaravelOptionStore;
 use Modules\SpatBridge\Services\Support\OptionBool;
 use Modules\SpatBridge\Services\Support\OptionStoreInterface;
@@ -237,8 +238,8 @@ class SpatBridgeServiceProvider extends ServiceProvider
                     return;
                 }
 
-                $email = $this->customerEmail($customer, $conversation);
-                if ($email === '') {
+                $emails = CustomerEmails::of($customer, $conversation);
+                if ($emails === []) {
                     return;
                 }
 
@@ -248,7 +249,7 @@ class SpatBridgeServiceProvider extends ServiceProvider
                     new ActionPermissions($options)
                 );
                 $viewModel = $builder->build(
-                    $this->cachedResult($email),
+                    $this->cachedResult($emails),
                     $this->app->make(FeatureRegistry::class)->enabled($options),
                     auth()->user()
                 );
@@ -276,23 +277,6 @@ class SpatBridgeServiceProvider extends ServiceProvider
     }
     // @codeCoverageIgnoreEnd
 
-    /**
-     * @param mixed $customer
-     * @param mixed $conversation
-     */
-    private function customerEmail($customer, $conversation): string
-    {
-        $email = '';
-        if (is_object($customer) && method_exists($customer, 'getMainEmail')) {
-            $email = trim((string) $customer->getMainEmail());
-        }
-        if ($email === '' && is_object($conversation) && isset($conversation->customer_email)) {
-            $email = trim((string) $conversation->customer_email);
-        }
-
-        return $email;
-    }
-
     private function shouldShowForMailbox(int $mailboxId): bool
     {
         return MailboxScope::allows($this->app->make(OptionStoreInterface::class), $mailboxId);
@@ -302,17 +286,21 @@ class SpatBridgeServiceProvider extends ServiceProvider
      * One-minute cache (Laravel 5.5 TTLs are minutes) of the decoded data
      * only: a layout switch never refetches, and a WordPress outage isn't
      * pinned for a minute after recovery because failures aren't cached.
+     * Keyed by the address list, which ActionController clears after an
+     * action.
+     *
+     * @param string[] $emails From CustomerEmails::of().
      */
-    private function cachedResult(string $email): ClientResult
+    private function cachedResult(array $emails): ClientResult
     {
-        $cacheKey = 'spatbridge.customer.' . md5(strtolower($email));
+        $cacheKey = CustomerEmails::cacheKey($emails);
 
         $cached = \Cache::get($cacheKey);
         if (is_array($cached)) {
             return ClientResult::success(200, $cached, 0);
         }
 
-        $result = $this->app->make(SpatClient::class)->customer($email);
+        $result = $this->app->make(SpatClient::class)->customer($emails);
         if ($result->ok() && is_array($result->data())) {
             \Cache::put($cacheKey, $result->data(), 1);
         }

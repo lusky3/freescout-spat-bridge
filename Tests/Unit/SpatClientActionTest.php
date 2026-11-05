@@ -192,7 +192,7 @@ class SpatClientActionTest extends TestCase
 
     public function test_customer_route_keeps_the_plain_http_error(): void
     {
-        $result = $this->client([$this->wpError(409, 'whatever', 'A message')])->customer('a@example.com');
+        $result = $this->client([$this->wpError(409, 'whatever', 'A message')])->customer(['a@example.com']);
 
         $this->assertSame('http_error', $result->errorCode());
         $this->assertSame('', $result->detail());
@@ -211,5 +211,44 @@ class SpatClientActionTest extends TestCase
     {
         $this->assertSame('not_configured', $this->match($this->client([], ''))->errorCode());
         $this->assertCount(0, $this->history);
+    }
+
+    /**
+     * @dataProvider actionLogLevelProvider
+     */
+    public function test_a_refusal_wordpress_explains_is_a_warning_anything_else_an_error(
+        Response $response,
+        string $level
+    ): void {
+        $logger = new class extends \Psr\Log\AbstractLogger {
+            public $records = [];
+
+            public function log($level, $message, array $context = [])
+            {
+                $this->records[] = [$level, (string) $message];
+            }
+        };
+        $options = new FakeOptionStore();
+        $options->set('spatbridge.wp_base_url', self::BASE);
+        $options->set('spatbridge.shared_secret', self::SECRET);
+        $http = new Client(['handler' => HandlerStack::create(new MockHandler([$response]))]);
+        $client = new SpatClient($http, $options, $logger);
+
+        $this->match($client);
+
+        $this->assertCount(1, $logger->records);
+        $this->assertSame($level, $logger->records[0][0]);
+    }
+
+    public function actionLogLevelProvider(): array
+    {
+        return [
+            'refused with a reason' => [$this->wpError(409, 'spat_email_in_use', 'Taken.'), 'warning'],
+            'actor forbidden' => [$this->wpError(403, 'spat_freescout_actor_forbidden'), 'warning'],
+            'actor unknown' => [$this->wpError(403, 'spat_freescout_actor_unknown'), 'warning'],
+            'unknown action' => [$this->wpError(404, 'spat_freescout_unknown_action'), 'warning'],
+            'no reason given' => [new Response(500, [], 'boom'), 'error'],
+            'bad signature' => [$this->wpError(403, 'spat_freescout_invalid_signature'), 'error'],
+        ];
     }
 }

@@ -4,7 +4,8 @@
      data-feature="{{ $feature }}"
      data-action="{{ $action }}"
      data-params="{{ $paramsJson }}"
-     data-conversation-id="{{ $conversationId }}">
+     data-conversation-id="{{ $conversationId }}"
+     data-invalid-text="{{ __('Enter a valid new email address.') }}">
     <p>{{ __('Current email') }}: <strong>{{ $oldEmail }}</strong></p>
     <div class="form-group">
         <label for="spatbridge-new-email">{{ __('New email') }}</label>

@@ -233,14 +233,48 @@ class PlayerCardFeatureTest extends TestCase
         $this->assertSame(['change_email', 'rerun'], (new PlayerCardFeature())->actionKeys());
     }
 
-    public function test_the_first_player_row_offers_change_email_with_the_matched_email(): void
+    public function test_each_player_row_offers_change_email_with_the_address_that_player_was_found_under(): void
     {
-        $panel = (new PlayerCardFeature())->present(
-            $this->withEmail([$this->player(), $this->player(['name' => 'Second'])], null, 'jordan@example.com')
-        );
+        $panel = (new PlayerCardFeature())->present($this->withEmail([
+            $this->player(['email' => 'jordan@example.com']),
+            $this->player(['name' => 'Sam', 'email' => ' second@example.com ']),
+        ], null, 'jordan@example.com'));
 
         $this->assertSame(
             [['player', 'change_email', 'Change email…', ['old_email' => 'jordan@example.com']]],
+            $this->actionsOf($panel->rows()[0])
+        );
+        $this->assertSame(
+            [['player', 'change_email', 'Change email…', ['old_email' => 'second@example.com']]],
+            $this->actionsOf($panel->rows()[1])
+        );
+    }
+
+    public function test_a_player_without_its_own_address_gets_no_change_email(): void
+    {
+        // The primary address may hold other people's records; changing it
+        // from this row would change theirs, not this player's.
+        $panel = (new PlayerCardFeature())->present($this->withEmail([
+            $this->player(['email' => null]),
+            $this->player(['name' => 'Second']),
+            $this->player(['name' => 'Third', 'email' => ['not', 'a string']]),
+            $this->player(['name' => 'Fourth', 'email' => '  ']),
+        ], null, 'primary@example.com'));
+
+        $this->assertCount(4, $panel->rows());
+        foreach ($panel->rows() as $row) {
+            $this->assertSame([], $row->actions());
+        }
+    }
+
+    public function test_a_players_own_address_is_used_without_a_primary_address(): void
+    {
+        $panel = (new PlayerCardFeature())->present(
+            $this->sections([$this->player(['email' => 'own@example.com']), $this->player(['name' => 'None'])])
+        );
+
+        $this->assertSame(
+            [['player', 'change_email', 'Change email…', ['old_email' => 'own@example.com']]],
             $this->actionsOf($panel->rows()[0])
         );
         $this->assertSame([], $panel->rows()[1]->actions());
@@ -359,13 +393,13 @@ class PlayerCardFeatureTest extends TestCase
         $this->assertNull((new PlayerCardFeature())->guardParams('rerun', ['order_id' => 5107], []));
     }
 
-    public function test_change_email_note_follow_up_explains_the_card_follows_the_ticket(): void
+    public function test_change_email_note_follow_up_explains_the_card_follows_the_customers_addresses(): void
     {
         $feature = new PlayerCardFeature();
 
         $this->assertSame(
-            "The ARL League card follows the ticket's email address. To see it here, "
-            . "update the customer's email in FreeScout to the new address.",
+            "The ARL League card looks the customer up by their email addresses in FreeScout. "
+            . "To see this player here, add the new address to the customer in FreeScout.",
             $feature->noteFollowUp('change_email', ['new_email' => 'new@example.com'])
         );
         $this->assertNull($feature->noteFollowUp('rerun', ['order_id' => 5107]));

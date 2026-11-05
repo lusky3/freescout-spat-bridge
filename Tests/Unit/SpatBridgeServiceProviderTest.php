@@ -5,6 +5,7 @@ namespace Tests\Unit;
 use Modules\SpatBridge\Providers\SpatBridgeServiceProvider;
 use Modules\SpatBridge\Services\ClientResult;
 use Modules\SpatBridge\Services\SpatClient;
+use Modules\SpatBridge\Services\Support\CustomerEmails;
 use Modules\SpatBridge\Services\Support\OptionStoreInterface;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
@@ -50,8 +51,13 @@ class SpatBridgeServiceProviderTest extends TestCase
                 $this->results = $results;
             }
 
-            public function customer(string $email): ClientResult
+            /** @var array<int, string[]> */
+            public $sent = [];
+
+            public function customer(array $emails): ClientResult
             {
+                $this->sent[] = $emails;
+
                 return $this->results[$this->calls++];
             }
         };
@@ -84,34 +90,36 @@ class SpatBridgeServiceProviderTest extends TestCase
         $this->assertFalse($this->invoke($provider, 'shouldShowForMailbox', [6]));
     }
 
-    public function test_customer_email_prefers_customer_then_conversation(): void
-    {
-        $provider = $this->provider();
-        $conversation = (object) ['customer_email' => 'conv@example.com'];
-
-        $email = function ($customer, $conv) use ($provider) {
-            return $this->invoke($provider, 'customerEmail', [$customer, $conv]);
-        };
-
-        $this->assertSame('a@example.com', $email(new FakeCustomer(' a@example.com '), $conversation));
-        $this->assertSame('conv@example.com', $email(new FakeCustomer(''), $conversation));
-        $this->assertSame('conv@example.com', $email(null, $conversation));
-        $this->assertSame('', $email(null, null));
-    }
-
-    public function test_ok_results_are_cached_by_lowercased_email(): void
+    public function test_the_lookup_sends_every_customer_address_and_caches_under_the_lists_key(): void
     {
         $client = $this->client([ClientResult::success(200, ['sections' => ['x' => 1]], 7)]);
         $provider = $this->provider(null, $client);
+        $customer = new FakeCustomer('Jordan@Example.com', ['jordan@example.com', 'second@example.com']);
+        $conversation = (object) ['customer_email' => 'thread@example.com'];
+        $emails = ['jordan@example.com', 'thread@example.com', 'second@example.com'];
 
-        $first = $this->invoke($provider, 'cachedResult', ['Jordan@Example.com']);
-        $second = $this->invoke($provider, 'cachedResult', ['jordan@example.com']);
+        $first = $this->invoke($provider, 'cachedResult', [CustomerEmails::of($customer, $conversation)]);
+        $second = $this->invoke($provider, 'cachedResult', [$emails]);
 
         $this->assertTrue($first->ok());
         $this->assertTrue($second->ok());
         $this->assertSame(['sections' => ['x' => 1]], $second->data());
-        $this->assertSame(1, $client->calls);
-        $this->assertArrayHasKey('spatbridge.customer.' . md5('jordan@example.com'), FakeCache::$store);
+        $this->assertSame([$emails], $client->sent);
+        $this->assertArrayHasKey(CustomerEmails::cacheKey($emails), FakeCache::$store);
+    }
+
+    public function test_another_address_list_is_another_lookup(): void
+    {
+        $client = $this->client([
+            ClientResult::success(200, ['sections' => []], 1),
+            ClientResult::success(200, ['sections' => []], 1),
+        ]);
+        $provider = $this->provider(null, $client);
+
+        $this->invoke($provider, 'cachedResult', [['a@example.com']]);
+        $this->invoke($provider, 'cachedResult', [['a@example.com', 'b@example.com']]);
+
+        $this->assertSame([['a@example.com'], ['a@example.com', 'b@example.com']], $client->sent);
     }
 
     public function test_failures_are_not_cached(): void
@@ -122,8 +130,8 @@ class SpatBridgeServiceProviderTest extends TestCase
         ]);
         $provider = $this->provider(null, $client);
 
-        $this->assertFalse($this->invoke($provider, 'cachedResult', ['a@example.com'])->ok());
-        $this->assertTrue($this->invoke($provider, 'cachedResult', ['a@example.com'])->ok());
+        $this->assertFalse($this->invoke($provider, 'cachedResult', [['a@example.com']])->ok());
+        $this->assertTrue($this->invoke($provider, 'cachedResult', [['a@example.com']])->ok());
         $this->assertSame(2, $client->calls);
     }
 }

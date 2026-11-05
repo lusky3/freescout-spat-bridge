@@ -4,7 +4,8 @@
      data-feature="{{ $feature }}"
      data-action="{{ $action }}"
      data-params="{{ $paramsJson }}"
-     data-conversation-id="{{ $conversationId }}">
+     data-conversation-id="{{ $conversationId }}"
+     data-invalid-text="{{ __('Enter a number of hours from 1 to 720.') }}">
     <div class="form-group">
         <label for="spatbridge-offer-hours">{{ __('Hours to accept') }}</label>
         <input type="number" id="spatbridge-offer-hours" class="form-control spatbridge-offer-hours" min="1" max="720" step="1"
